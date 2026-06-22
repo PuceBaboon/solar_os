@@ -179,6 +179,32 @@ for ap in solaros.wifi.scan():
     print(ap["rssi"], ap["auth"], ap["ssid"])
 ```
 
+## `solaros.mqtt`
+
+MQTT functions expose the shared SolarOS MQTT service. Broker URL and credentials are stored in NVS, so they work without an SD card.
+
+- `status()`: return MQTT status, saved broker URL, client ID, auth flags, counters, queued message count, and last error.
+- `connect([url[, username[, password]]])`: connect to `mqtt://...` or `mqtts://...`; supplied values are saved in NVS. With no arguments, reconnect using saved settings.
+- `disconnect()`: stop the MQTT client.
+- `publish(topic, payload[, qos[, retain]])`: publish bytes or text and return the message ID.
+- `subscribe(topic[, qos])`: subscribe and return the message ID.
+- `read([timeout_ms])`: return the next queued message dictionary, or `None` on timeout. Message payloads are returned as bytes.
+
+Example:
+
+```python
+import solaros
+
+solaros.mqtt.connect("mqtts://broker.example.com:8883", "user", "secret")
+solaros.mqtt.publish("solaros/status", b"online", 0, False)
+solaros.mqtt.subscribe("solaros/inbox/#")
+
+while not solaros.should_exit():
+    msg = solaros.mqtt.read(1000)
+    if msg:
+        print(msg["topic"], msg["payload"])
+```
+
 ## `solaros.gpio`
 
 GPIO functions expose only the runtime-safe expansion pins: GPIO1, GPIO2, GPIO3, and GPIO17. GPIO0 is exposed on the connector but reserved for BOOT/download mode, and GPIO18 is reserved for the board KEY input.

@@ -28,6 +28,7 @@
 #include "solar_os_jobs.h"
 #include "solar_os_log.h"
 #include "solar_os_memory.h"
+#include "solar_os_mqtt.h"
 #include "solar_os_ota.h"
 #include "solar_os_port.h"
 #include "solar_os_pwm.h"
@@ -559,6 +560,11 @@ static void init_peripherals(void)
     const esp_err_t ota_err = solar_os_ota_init();
     if (ota_err != ESP_OK) {
         SOLAR_OS_LOGW(TAG, "OTA service unavailable: %s", esp_err_to_name(ota_err));
+    }
+
+    const esp_err_t mqtt_err = solar_os_mqtt_init();
+    if (mqtt_err != ESP_OK) {
+        SOLAR_OS_LOGW(TAG, "MQTT service unavailable: %s", esp_err_to_name(mqtt_err));
     }
 
     const esp_err_t uart_err = solar_os_uart_init();

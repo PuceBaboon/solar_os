@@ -39,6 +39,7 @@
 #include "solar_os_i2c.h"
 #include "solar_os_identity.h"
 #include "solar_os_jobs.h"
+#include "solar_os_mqtt.h"
 #include "solar_os_net.h"
 #include "solar_os_pwm.h"
 #include "solar_os_sensors.h"
@@ -655,6 +656,42 @@ static mp_obj_t python_audio_status_to_dict(const solar_os_audio_status_t *statu
     return dict;
 }
 
+static mp_obj_t python_mqtt_status_to_dict(const solar_os_mqtt_status_t *status)
+{
+    mp_obj_t dict = mp_obj_new_dict(16);
+    python_dict_store_bool(dict, "initialized", status->initialized);
+    python_dict_store_bool(dict, "configured", status->configured);
+    python_dict_store_bool(dict, "running", status->running);
+    python_dict_store_bool(dict, "connected", status->connected);
+    python_dict_store_bool(dict, "username_set", status->username_set);
+    python_dict_store_bool(dict, "password_set", status->password_set);
+    python_dict_store_cstr(dict, "url", status->url);
+    python_dict_store_cstr(dict, "username", status->username);
+    python_dict_store_cstr(dict, "client_id", status->client_id);
+    python_dict_store_cstr(dict, "last_error", status->last_error);
+    python_dict_store_int(dict, "last_esp_error", status->last_esp_error);
+    python_dict_store_int(dict, "last_msg_id", status->last_msg_id);
+    python_dict_store_uint(dict, "rx_count", status->rx_count);
+    python_dict_store_uint(dict, "tx_count", status->tx_count);
+    python_dict_store_uint(dict, "dropped_count", status->dropped_count);
+    python_dict_store_uint(dict, "queued_messages", status->queued_messages);
+    return dict;
+}
+
+static mp_obj_t python_mqtt_message_to_dict(const solar_os_mqtt_message_t *message)
+{
+    mp_obj_t dict = mp_obj_new_dict(6);
+    python_dict_store_cstr(dict, "topic", message->topic);
+    mp_obj_dict_store(dict,
+                      python_key("payload"),
+                      mp_obj_new_bytes((const byte *)message->payload, message->payload_len));
+    python_dict_store_uint(dict, "payload_len", message->payload_len);
+    python_dict_store_int(dict, "qos", message->qos);
+    python_dict_store_bool(dict, "retain", message->retain);
+    python_dict_store_bool(dict, "truncated", message->truncated);
+    return dict;
+}
+
 static mp_obj_t python_wav_info_to_dict(const solar_os_audio_wav_info_t *info)
 {
     mp_obj_t dict = mp_obj_new_dict(6);
@@ -1188,6 +1225,73 @@ static mp_obj_t solaros_wifi_nat(mp_obj_t enabled_obj)
     return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_1(solaros_wifi_nat_obj, solaros_wifi_nat);
+
+static mp_obj_t solaros_mqtt_status(void)
+{
+    solar_os_mqtt_status_t status;
+    python_check_esp(solar_os_mqtt_get_status(&status));
+    return python_mqtt_status_to_dict(&status);
+}
+MP_DEFINE_CONST_FUN_OBJ_0(solaros_mqtt_status_obj, solaros_mqtt_status);
+
+static mp_obj_t solaros_mqtt_connect(size_t n_args, const mp_obj_t *args)
+{
+    const char *url = python_optional_str(n_args, args, 0, NULL);
+    const char *username = python_optional_str(n_args, args, 1, NULL);
+    const char *password = python_optional_str(n_args, args, 2, NULL);
+    python_check_esp(solar_os_mqtt_connect(url, username, password));
+    return mp_const_none;
+}
+MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(solaros_mqtt_connect_obj, 0, 3, solaros_mqtt_connect);
+
+static mp_obj_t solaros_mqtt_disconnect(void)
+{
+    python_check_esp(solar_os_mqtt_disconnect());
+    return mp_const_none;
+}
+MP_DEFINE_CONST_FUN_OBJ_0(solaros_mqtt_disconnect_obj, solaros_mqtt_disconnect);
+
+static mp_obj_t solaros_mqtt_publish(size_t n_args, const mp_obj_t *args)
+{
+    const char *topic = mp_obj_str_get_str(args[0]);
+    mp_buffer_info_t bufinfo;
+    mp_get_buffer_raise(args[1], &bufinfo, MP_BUFFER_READ);
+    const int qos = n_args >= 3 && args[2] != mp_const_none ? mp_obj_get_int(args[2]) : 0;
+    const bool retain = n_args >= 4 && args[3] != mp_const_none ? mp_obj_is_true(args[3]) : false;
+
+    int msg_id = 0;
+    python_check_esp(solar_os_mqtt_publish(topic,
+                                           bufinfo.buf,
+                                           bufinfo.len,
+                                           qos,
+                                           retain,
+                                           &msg_id));
+    return mp_obj_new_int(msg_id);
+}
+MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(solaros_mqtt_publish_obj, 2, 4, solaros_mqtt_publish);
+
+static mp_obj_t solaros_mqtt_subscribe(size_t n_args, const mp_obj_t *args)
+{
+    const char *topic = mp_obj_str_get_str(args[0]);
+    const int qos = n_args >= 2 && args[1] != mp_const_none ? mp_obj_get_int(args[1]) : 0;
+    int msg_id = 0;
+    python_check_esp(solar_os_mqtt_subscribe(topic, qos, &msg_id));
+    return mp_obj_new_int(msg_id);
+}
+MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(solaros_mqtt_subscribe_obj, 1, 2, solaros_mqtt_subscribe);
+
+static mp_obj_t solaros_mqtt_read(size_t n_args, const mp_obj_t *args)
+{
+    const uint32_t timeout_ms = python_optional_u32(n_args, args, 0, 0);
+    solar_os_mqtt_message_t message;
+    const esp_err_t err = solar_os_mqtt_read_message(&message, timeout_ms);
+    if (err == ESP_ERR_TIMEOUT) {
+        return mp_const_none;
+    }
+    python_check_esp(err);
+    return python_mqtt_message_to_dict(&message);
+}
+MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(solaros_mqtt_read_obj, 0, 1, solaros_mqtt_read);
 
 static int python_gpio_pin_from_obj(mp_obj_t obj)
 {
@@ -2543,6 +2647,14 @@ static void python_register_solaros_module(void)
     python_module_store(wifi, "ap_start", MP_OBJ_FROM_PTR(&solaros_wifi_ap_start_obj));
     python_module_store(wifi, "ap_stop", MP_OBJ_FROM_PTR(&solaros_wifi_ap_stop_obj));
     python_module_store(wifi, "nat", MP_OBJ_FROM_PTR(&solaros_wifi_nat_obj));
+
+    mp_obj_t mqtt = python_new_submodule(module, "mqtt");
+    python_module_store(mqtt, "status", MP_OBJ_FROM_PTR(&solaros_mqtt_status_obj));
+    python_module_store(mqtt, "connect", MP_OBJ_FROM_PTR(&solaros_mqtt_connect_obj));
+    python_module_store(mqtt, "disconnect", MP_OBJ_FROM_PTR(&solaros_mqtt_disconnect_obj));
+    python_module_store(mqtt, "publish", MP_OBJ_FROM_PTR(&solaros_mqtt_publish_obj));
+    python_module_store(mqtt, "subscribe", MP_OBJ_FROM_PTR(&solaros_mqtt_subscribe_obj));
+    python_module_store(mqtt, "read", MP_OBJ_FROM_PTR(&solaros_mqtt_read_obj));
 
     mp_obj_t gpio = python_new_submodule(module, "gpio");
     python_module_store(gpio, "INPUT", mp_obj_new_int(SOLAR_OS_GPIO_MODE_INPUT));

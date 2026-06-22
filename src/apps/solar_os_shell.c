@@ -134,6 +134,7 @@ static const shell_command_t shell_builtin_commands[] = {
     {"adc", "read expansion analog inputs", solar_os_shell_cmd_adc},
     {"ble", "BLE keyboard control", solar_os_shell_cmd_ble},
     {"wifi", "Wi-Fi station control", solar_os_shell_cmd_wifi},
+    {"mqtt", "MQTT client", solar_os_shell_cmd_mqtt},
     {"ping", "send ICMP echo requests", solar_os_shell_cmd_ping},
     {"netscan", "scan TCP ports", solar_os_shell_cmd_netscan},
     {"audio", "audio codec tools", solar_os_shell_cmd_audio},
@@ -192,6 +193,14 @@ static const char * const wifi_subcommands[] = {
     "disconnect",
     "forget",
     "nat",
+};
+
+static const char * const mqtt_subcommands[] = {
+    "status",
+    "connect",
+    "disconnect",
+    "publish",
+    "subscribe",
 };
 
 static const char * const job_subcommands[] = {
@@ -294,6 +303,7 @@ static const shell_subcommand_set_t shell_subcommand_sets[] = {
     {"job", job_subcommands, sizeof(job_subcommands) / sizeof(job_subcommands[0])},
     {"ble", ble_subcommands, sizeof(ble_subcommands) / sizeof(ble_subcommands[0])},
     {"wifi", wifi_subcommands, sizeof(wifi_subcommands) / sizeof(wifi_subcommands[0])},
+    {"mqtt", mqtt_subcommands, sizeof(mqtt_subcommands) / sizeof(mqtt_subcommands[0])},
     {"sd", sd_subcommands, sizeof(sd_subcommands) / sizeof(sd_subcommands[0])},
     {"i2c", i2c_subcommands, sizeof(i2c_subcommands) / sizeof(i2c_subcommands[0])},
     {"uart", uart_subcommands, sizeof(uart_subcommands) / sizeof(uart_subcommands[0])},

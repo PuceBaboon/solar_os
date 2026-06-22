@@ -17,6 +17,7 @@ void solar_os_shell_cmd_job(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_jobs(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_log(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_mem(solar_os_context_t *ctx, int argc, char **argv);
+void solar_os_shell_cmd_mqtt(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_netscan(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_ntp(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_ota(solar_os_context_t *ctx, int argc, char **argv);

@@ -169,6 +169,7 @@ Networking:
 - `wifi [status|on|off|scan|connect|disconnect|forget|nat]`
 - `wifi ap [status|on|off]`: start a SoftAP, including APSTA when station mode is also active.
 - `wifi nat [status|on|off]`: enable or disable persistent IPv4 NAT for APSTA.
+- `mqtt [status|connect|disconnect|publish|subscribe]`: MQTT/MQTTS client with broker URL and credentials stored in NVS.
 - `ping <host>`
 - `ota [status|check|upgrade|url|boot]`: inspect OTA partitions, check `version.txt`, stream `firmware.bin` into the inactive OTA slot, configure the OTA base URL, or select an OTA slot to boot. The default base URL is `https://hypergraph.cloud/solaros/latest`; the repository root can keep immutable version folders and point `latest` at the current release.
 - `sshkey [status|gen|pub|rm]`
@@ -176,6 +177,8 @@ Networking:
 `wifi ap on [ssid [password [open|wpa|wpa2|wpa/wpa2]]]` starts an access point. Supplying an SSID saves the AP settings in NVS; later `wifi ap on` reuses the saved SSID/password/auth mode, or falls back to the default open AP when no saved AP exists. With no password it creates an open AP. With a password and no explicit auth mode it uses WPA2. ESP-IDF does not support WEP in SoftAP mode, so SolarOS rejects `wep` for AP mode.
 
 `wifi nat on` saves NAT as enabled and activates it when both the station link and SoftAP are up. It stays in a waiting state until APSTA has an upstream IP address.
+
+`mqtt connect mqtt://host[:port] [username [password]]` or `mqtt connect mqtts://host[:port] [username [password]]` saves the broker settings in NVS. Later `mqtt connect` reuses the saved URL and credentials without requiring an SD card.
 
 ## Built-In Jobs
 
@@ -247,7 +250,7 @@ The built-in app registry stores each app name, summary, implementation pointer,
 
 `python` starts an interactive MicroPython prompt with `>>>` and `...` continuation prompts. `python <file.py|file.mpy> [args...]` runs a MicroPython script from SD. Script output is drawn in the SolarOS terminal, `sys.argv` contains the script path and following arguments, and `CTRL+ALT+DEL` exits at the prompt or requests `KeyboardInterrupt` while code is running.
 
-The native `solaros` module exposes SolarOS services to MicroPython scripts. Top-level helpers include `write(text)`, `version()`, `should_exit()`, `battery_status()`, `wifi_status()`, and `environment()`. Service modules are grouped as `solaros.storage`, `solaros.time`, `solaros.battery`, `solaros.sensors`, `solaros.wifi`, `solaros.gpio`, `solaros.adc`, `solaros.pwm`, `solaros.i2c`, `solaros.uart`, `solaros.audio`, `solaros.ble`, `solaros.clipboard`, `solaros.identity`, `solaros.net`, `solaros.ssh_keys`, `solaros.jobs`, and `solaros.apps`.
+The native `solaros` module exposes SolarOS services to MicroPython scripts. Top-level helpers include `write(text)`, `version()`, `should_exit()`, `battery_status()`, `wifi_status()`, and `environment()`. Service modules are grouped as `solaros.storage`, `solaros.time`, `solaros.battery`, `solaros.sensors`, `solaros.wifi`, `solaros.mqtt`, `solaros.gpio`, `solaros.adc`, `solaros.pwm`, `solaros.i2c`, `solaros.uart`, `solaros.audio`, `solaros.ble`, `solaros.clipboard`, `solaros.identity`, `solaros.net`, `solaros.ssh_keys`, `solaros.jobs`, and `solaros.apps`.
 
 See [SolarOS Python API](doc/solar_os_python.md) for the full module reference and examples.
 
