@@ -18,7 +18,7 @@
 #include "solar_os_tui.h"
 
 #define CHAT_APP_DEFAULT_CHANNEL "general"
-#define CHAT_APP_CHANNEL_COUNT 12
+#define CHAT_APP_CHANNEL_COUNT 32
 #define CHAT_APP_MESSAGE_COUNT 80
 #define CHAT_APP_INPUT_MAX SOLAR_OS_CHAT_TEXT_MAX
 #define CHAT_APP_STATUS_MAX 96
@@ -27,6 +27,8 @@
 #define CHAT_APP_INPUT_ROWS 3
 #define CHAT_APP_DRAIN_EVENTS_PER_TICK 12
 #define CHAT_APP_HISTORY_COUNT 16
+#define CHAT_APP_LINE_MAX 256
+#define CHAT_APP_STATUS_TEXT_MAX 256
 
 typedef enum {
     CHAT_APP_FOCUS_MESSAGES,
@@ -58,11 +60,11 @@ typedef struct {
     char initial_channel[SOLAR_OS_CHAT_CHANNEL_MAX];
     char initial_user[SOLAR_OS_CHAT_USER_MAX];
     char initial_token[SOLAR_OS_CHAT_TOKEN_MAX];
-    char input[CHAT_APP_INPUT_MAX];
+    char *input;
     size_t input_len;
     size_t input_cursor;
     size_t input_view_offset;
-    char history_draft[CHAT_APP_INPUT_MAX];
+    char *history_draft;
     char (*history)[CHAT_APP_INPUT_MAX];
     size_t history_count;
     int history_index;
@@ -71,10 +73,11 @@ typedef struct {
     uint8_t current_channel;
     uint8_t channel_count;
     uint8_t channel_scroll;
-    uint8_t message_scroll;
+    size_t message_scroll;
     char status[CHAT_APP_STATUS_MAX];
     chat_app_channel_t channels[CHAT_APP_CHANNEL_COUNT];
     chat_app_message_t *messages;
+    solar_os_chat_event_t *event;
     size_t message_head;
     size_t message_count;
 } chat_app_state_t;
@@ -107,7 +110,10 @@ static void chat_set_status(const char *status)
 
 static void chat_set_input(const char *text)
 {
-    strlcpy(chat_app.input, text != NULL ? text : "", sizeof(chat_app.input));
+    if (chat_app.input == NULL) {
+        return;
+    }
+    strlcpy(chat_app.input, text != NULL ? text : "", CHAT_APP_INPUT_MAX);
     chat_app.input_len = strlen(chat_app.input);
     chat_app.input_cursor = chat_app.input_len;
     chat_app.input_view_offset = 0;
@@ -150,7 +156,9 @@ static void chat_history_previous(void)
     }
 
     if (!chat_app.history_browsing) {
-        strlcpy(chat_app.history_draft, chat_app.input, sizeof(chat_app.history_draft));
+        if (chat_app.history_draft != NULL) {
+            strlcpy(chat_app.history_draft, chat_app.input, CHAT_APP_INPUT_MAX);
+        }
         chat_app.history_index = (int)chat_app.history_count - 1;
         chat_app.history_browsing = true;
     } else if (chat_app.history_index > 0) {
@@ -173,28 +181,94 @@ static void chat_history_next(void)
     }
 
     chat_history_cancel();
-    chat_set_input(chat_app.history_draft);
+    chat_set_input(chat_app.history_draft != NULL ? chat_app.history_draft : "");
 }
 
-static size_t chat_safe_clip_len(const char *text, size_t max_bytes)
+static size_t chat_utf8_char_len(const char *text)
 {
+    if (text == NULL || text[0] == '\0') {
+        return 0;
+    }
+
+    const unsigned char ch = (unsigned char)text[0];
+    if (ch < 0x80U) {
+        return 1;
+    }
+    if ((ch & 0xe0U) == 0xc0U &&
+        text[1] != '\0' &&
+        (text[1] & 0xc0U) == 0x80U) {
+        return 2;
+    }
+    if ((ch & 0xf0U) == 0xe0U &&
+        text[1] != '\0' &&
+        text[2] != '\0' &&
+        (text[1] & 0xc0U) == 0x80U &&
+        (text[2] & 0xc0U) == 0x80U) {
+        return 3;
+    }
+    if ((ch & 0xf8U) == 0xf0U &&
+        text[1] != '\0' &&
+        text[2] != '\0' &&
+        text[3] != '\0' &&
+        (text[1] & 0xc0U) == 0x80U &&
+        (text[2] & 0xc0U) == 0x80U &&
+        (text[3] & 0xc0U) == 0x80U) {
+        return 4;
+    }
+    return 1;
+}
+
+static size_t chat_utf8_width(const char *text)
+{
+    size_t width = 0;
     if (text == NULL) {
         return 0;
     }
 
-    size_t len = 0;
-    size_t last_safe = 0;
-    while (text[len] != '\0' && len < max_bytes) {
-        const unsigned char ch = (unsigned char)text[len];
-        if ((ch & 0xc0U) != 0x80U) {
-            last_safe = len;
+    for (size_t i = 0; text[i] != '\0';) {
+        const size_t char_len = chat_utf8_char_len(text + i);
+        if (char_len == 0) {
+            break;
         }
-        len++;
+        i += char_len;
+        width++;
     }
-    if (text[len] == '\0') {
-        return len;
+    return width;
+}
+
+static size_t chat_take_columns(const char *text,
+                                size_t max_cols,
+                                size_t max_bytes,
+                                size_t *cols_taken)
+{
+    size_t bytes = 0;
+    size_t cols = 0;
+
+    if (text == NULL || max_cols == 0 || max_bytes == 0) {
+        if (cols_taken != NULL) {
+            *cols_taken = 0;
+        }
+        return 0;
     }
-    return last_safe;
+
+    while (text[bytes] != '\0' && cols < max_cols) {
+        const size_t char_len = chat_utf8_char_len(text + bytes);
+        if (char_len == 0 || bytes + char_len > max_bytes) {
+            break;
+        }
+        bytes += char_len;
+        cols++;
+    }
+
+    if (cols_taken != NULL) {
+        *cols_taken = cols;
+    }
+    return bytes;
+}
+
+static size_t chat_safe_clip_len(const char *text, size_t max_cols, size_t max_bytes)
+{
+    return chat_take_columns(text, max_cols, max_bytes, NULL);
 }
 
 static void chat_write_cell(size_t row,
@@ -213,9 +287,8 @@ static void chat_write_cell(size_t row,
         return;
     }
 
-    char clipped[128];
-    const size_t max_copy = width < sizeof(clipped) - 1U ? width : sizeof(clipped) - 1U;
-    const size_t copy_len = chat_safe_clip_len(text, max_copy);
+    char clipped[CHAT_APP_LINE_MAX];
+    const size_t copy_len = chat_safe_clip_len(text, width, sizeof(clipped) - 1U);
     memcpy(clipped, text, copy_len);
     clipped[copy_len] = '\0';
     solar_os_tui_addstr(&chat_app.tui, row, col, clipped, attr);
@@ -331,7 +404,7 @@ static void chat_append_event(solar_os_chat_event_type_t type,
 
 static void chat_append_statusf(const char *fmt, ...)
 {
-    char text[SOLAR_OS_CHAT_TEXT_MAX];
+    char text[CHAT_APP_STATUS_TEXT_MAX];
     va_list args;
 
     va_start(args, fmt);
@@ -362,30 +435,375 @@ static bool chat_message_matches_current(const chat_app_message_t *message)
     return strcmp(message->channel, chat_current_channel_name()) == 0;
 }
 
-static void chat_format_message(const chat_app_message_t *message, char *out, size_t out_len)
+typedef void (*chat_visual_line_fn)(const char *line, uint8_t attr, void *user);
+
+static void chat_make_spaces(char *out, size_t out_len, size_t count)
 {
     if (out == NULL || out_len == 0) {
         return;
     }
-    out[0] = '\0';
+
+    const size_t spaces = count < out_len ? count : out_len - 1U;
+    memset(out, ' ', spaces);
+    out[spaces] = '\0';
+}
+
+static void chat_make_user_prefix(const char *from,
+                                  size_t width,
+                                  char *prefix,
+                                  size_t prefix_len,
+                                  char *indent,
+                                  size_t indent_len)
+{
+    if (prefix == NULL || prefix_len == 0 || indent == NULL || indent_len == 0) {
+        return;
+    }
+    prefix[0] = '\0';
+    indent[0] = '\0';
+
+    if (from == NULL || from[0] == '\0' || width == 0) {
+        return;
+    }
+
+    size_t max_prefix_cols = width > 10U ? width / 2U : width - 1U;
+    if (max_prefix_cols > 18U) {
+        max_prefix_cols = 18U;
+    }
+    if (max_prefix_cols < 4U) {
+        max_prefix_cols = width > 4U ? 4U : width;
+    }
+
+    const size_t from_cols = chat_utf8_width(from);
+    if (from_cols + 2U <= max_prefix_cols) {
+        snprintf(prefix, prefix_len, "%s: ", from);
+    } else {
+        char name[SOLAR_OS_CHAT_USER_MAX];
+        const size_t name_cols = max_prefix_cols > 3U ? max_prefix_cols - 3U : 1U;
+        const size_t name_bytes = chat_take_columns(from,
+                                                    name_cols,
+                                                    sizeof(name) - 1U,
+                                                    NULL);
+        memcpy(name, from, name_bytes);
+        name[name_bytes] = '\0';
+        snprintf(prefix, prefix_len, "%s~: ", name);
+    }
+
+    size_t indent_cols = chat_utf8_width(prefix);
+    if (indent_cols >= width) {
+        indent_cols = width > 1U ? width - 1U : 0U;
+    }
+    chat_make_spaces(indent, indent_len, indent_cols);
+}
+
+static void chat_message_prefixes(const chat_app_message_t *message,
+                                  size_t width,
+                                  char *first,
+                                  size_t first_len,
+                                  char *next,
+                                  size_t next_len)
+{
+    if (first == NULL || first_len == 0 || next == NULL || next_len == 0) {
+        return;
+    }
+    first[0] = '\0';
+    next[0] = '\0';
+
     if (message == NULL) {
         return;
     }
 
     if (message->system) {
-        snprintf(out,
-                 out_len,
-                 "%c %s",
-                 message->type == SOLAR_OS_CHAT_EVENT_ERROR ? '!' : '*',
-                 message->text);
+        snprintf(first,
+                 first_len,
+                 "%c ",
+                 message->type == SOLAR_OS_CHAT_EVENT_ERROR ? '!' : '*');
+        chat_make_spaces(next, next_len, chat_utf8_width(first));
         return;
     }
 
-    if (message->from[0] != '\0') {
-        snprintf(out, out_len, "%s: %s", message->from, message->text);
-    } else {
-        strlcpy(out, message->text, out_len);
+    chat_make_user_prefix(message->from, width, first, first_len, next, next_len);
+}
+
+static void chat_line_init(char *line,
+                           size_t line_size,
+                           const char *prefix,
+                           size_t width,
+                           size_t *line_bytes,
+                           size_t *line_cols,
+                           bool *has_text)
+{
+    if (line == NULL || line_size == 0) {
+        return;
     }
+
+    size_t prefix_cols = 0;
+    const size_t prefix_bytes = chat_take_columns(prefix,
+                                                 width,
+                                                 line_size - 1U,
+                                                 &prefix_cols);
+    if (prefix_bytes > 0) {
+        memcpy(line, prefix, prefix_bytes);
+    }
+    line[prefix_bytes] = '\0';
+
+    if (line_bytes != NULL) {
+        *line_bytes = prefix_bytes;
+    }
+    if (line_cols != NULL) {
+        *line_cols = prefix_cols;
+    }
+    if (has_text != NULL) {
+        *has_text = false;
+    }
+}
+
+static void chat_line_append(char *line,
+                             size_t line_size,
+                             size_t *line_bytes,
+                             size_t *line_cols,
+                             const char *text,
+                             size_t text_bytes,
+                             size_t text_cols)
+{
+    if (line == NULL || line_size == 0 || line_bytes == NULL || line_cols == NULL ||
+        text == NULL || text_bytes == 0) {
+        return;
+    }
+    if (*line_bytes + text_bytes >= line_size) {
+        return;
+    }
+
+    memcpy(line + *line_bytes, text, text_bytes);
+    *line_bytes += text_bytes;
+    *line_cols += text_cols;
+    line[*line_bytes] = '\0';
+}
+
+static void chat_scan_word(const char *text, size_t *word_bytes, size_t *word_cols)
+{
+    size_t bytes = 0;
+    size_t cols = 0;
+
+    if (text != NULL) {
+        while (text[bytes] != '\0' &&
+               text[bytes] != '\n' &&
+               text[bytes] != '\r' &&
+               text[bytes] != ' ' &&
+               text[bytes] != '\t') {
+            const size_t char_len = chat_utf8_char_len(text + bytes);
+            if (char_len == 0) {
+                break;
+            }
+            bytes += char_len;
+            cols++;
+        }
+    }
+
+    if (word_bytes != NULL) {
+        *word_bytes = bytes;
+    }
+    if (word_cols != NULL) {
+        *word_cols = cols;
+    }
+}
+
+static size_t chat_emit_wrapped_message(const chat_app_message_t *message,
+                                        size_t width,
+                                        chat_visual_line_fn emit,
+                                        void *user)
+{
+    if (message == NULL || width == 0) {
+        return 0;
+    }
+
+    char first_prefix[80];
+    char next_prefix[80];
+    char line[CHAT_APP_LINE_MAX];
+    const uint8_t attr = message->system ? SOLAR_OS_TUI_ATTR_BOLD : SOLAR_OS_TUI_ATTR_NORMAL;
+    const char *text = message->text;
+    size_t line_bytes = 0;
+    size_t line_cols = 0;
+    size_t emitted = 0;
+    bool has_text = false;
+
+    chat_message_prefixes(message,
+                          width,
+                          first_prefix,
+                          sizeof(first_prefix),
+                          next_prefix,
+                          sizeof(next_prefix));
+    chat_line_init(line,
+                   sizeof(line),
+                   first_prefix,
+                   width,
+                   &line_bytes,
+                   &line_cols,
+                   &has_text);
+
+    while (text != NULL && *text != '\0') {
+        if (*text == '\n' || *text == '\r') {
+            if (emit != NULL) {
+                emit(line, attr, user);
+            }
+            emitted++;
+            if (*text == '\r' && text[1] == '\n') {
+                text += 2;
+            } else {
+                text++;
+            }
+            chat_line_init(line,
+                           sizeof(line),
+                           next_prefix,
+                           width,
+                           &line_bytes,
+                           &line_cols,
+                           &has_text);
+            continue;
+        }
+
+        if (*text == ' ' || *text == '\t') {
+            text++;
+            continue;
+        }
+
+        size_t word_bytes = 0;
+        size_t word_cols = 0;
+        chat_scan_word(text, &word_bytes, &word_cols);
+        if (word_bytes == 0 || word_cols == 0) {
+            text++;
+            continue;
+        }
+
+        const char *word = text;
+        size_t remaining_bytes = word_bytes;
+        size_t remaining_cols = word_cols;
+        while (remaining_cols > 0) {
+            const size_t room_cols = line_cols < width ? width - line_cols : 0;
+            const size_t space_cols = has_text ? 1U : 0U;
+
+            if (remaining_cols + space_cols <= room_cols) {
+                if (has_text) {
+                    chat_line_append(line,
+                                     sizeof(line),
+                                     &line_bytes,
+                                     &line_cols,
+                                     " ",
+                                     1,
+                                     1);
+                }
+                chat_line_append(line,
+                                 sizeof(line),
+                                 &line_bytes,
+                                 &line_cols,
+                                 word,
+                                 remaining_bytes,
+                                 remaining_cols);
+                has_text = true;
+                word += remaining_bytes;
+                remaining_bytes = 0;
+                remaining_cols = 0;
+                break;
+            }
+
+            if (!has_text && room_cols > 0) {
+                size_t taken_cols = 0;
+                const size_t taken_bytes = chat_take_columns(word,
+                                                            room_cols,
+                                                            sizeof(line) - line_bytes - 1U,
+                                                            &taken_cols);
+                if (taken_bytes == 0 || taken_cols == 0) {
+                    break;
+                }
+                chat_line_append(line,
+                                 sizeof(line),
+                                 &line_bytes,
+                                 &line_cols,
+                                 word,
+                                 taken_bytes,
+                                 taken_cols);
+                has_text = true;
+                word += taken_bytes;
+                remaining_bytes -= taken_bytes;
+                remaining_cols -= taken_cols;
+                if (remaining_cols == 0) {
+                    break;
+                }
+            }
+
+            if (emit != NULL) {
+                emit(line, attr, user);
+            }
+            emitted++;
+            chat_line_init(line,
+                           sizeof(line),
+                           next_prefix,
+                           width,
+                           &line_bytes,
+                           &line_cols,
+                           &has_text);
+        }
+
+        text = word;
+    }
+
+    if (emit != NULL) {
+        emit(line, attr, user);
+    }
+    emitted++;
+    return emitted;
+}
+
+static void chat_count_visual_line(const char *line, uint8_t attr, void *user)
+{
+    (void)line;
+    (void)attr;
+
+    size_t *count = (size_t *)user;
+    if (count != NULL) {
+        (*count)++;
+    }
+}
+
+static size_t chat_count_visual_rows(size_t width)
+{
+    size_t count = 0;
+
+    if (width == 0) {
+        return 0;
+    }
+
+    for (size_t logical = 0; logical < chat_app.message_count; logical++) {
+        const chat_app_message_t *message = chat_message_at(logical);
+        if (!chat_message_matches_current(message)) {
+            continue;
+        }
+        (void)chat_emit_wrapped_message(message, width, chat_count_visual_line, &count);
+    }
+    return count;
+}
+
+typedef struct {
+    size_t start_col;
+    size_t width;
+    size_t row;
+    size_t first_visible;
+    size_t visual_index;
+    size_t max_rows;
+    size_t drawn;
+} chat_draw_visual_ctx_t;
+
+static void chat_draw_visual_line(const char *line, uint8_t attr, void *user)
+{
+    chat_draw_visual_ctx_t *ctx = (chat_draw_visual_ctx_t *)user;
+    if (ctx == NULL) {
+        return;
+    }
+
+    if (ctx->visual_index >= ctx->first_visible && ctx->drawn < ctx->max_rows) {
+        chat_write_cell(ctx->row + ctx->drawn, ctx->start_col, ctx->width, line, attr);
+        ctx->drawn++;
+    }
+    ctx->visual_index++;
 }
 
 static void chat_draw_channels(size_t left_width, size_t body_rows)
@@ -448,8 +866,6 @@ static void chat_draw_messages(size_t start_col,
     chat_write_cell(0, start_col, width, header, header_attr);
 
     const size_t text_rows = body_rows > 1 ? body_rows - 1 : 0;
-    size_t drawn = 0;
-    size_t skipped = 0;
 
     for (size_t i = 0; i < text_rows; i++) {
         chat_write_cell(1 + i, start_col, width, "", SOLAR_OS_TUI_ATTR_NORMAL);
@@ -459,43 +875,40 @@ static void chat_draw_messages(size_t start_col,
         return;
     }
 
-    for (size_t reverse = 0; reverse < chat_app.message_count && drawn < text_rows; reverse++) {
-        const size_t logical = chat_app.message_count - 1U - reverse;
-        const chat_app_message_t *message = chat_message_at(logical);
-        if (!chat_message_matches_current(message)) {
-            continue;
-        }
-        if (skipped < chat_app.message_scroll) {
-            skipped++;
-            continue;
-        }
-        drawn++;
-    }
-
-    if (drawn == 0) {
+    const size_t total_rows = chat_count_visual_rows(width);
+    if (total_rows == 0) {
         return;
     }
 
-    size_t row = text_rows - drawn + 1U;
-    size_t emitted = 0;
-    skipped = 0;
-    for (size_t reverse = 0; reverse < chat_app.message_count && emitted < drawn; reverse++) {
-        const size_t logical = chat_app.message_count - 1U - reverse;
+    const size_t max_scroll = total_rows > text_rows ? total_rows - text_rows : 0;
+    if (chat_app.message_scroll > max_scroll) {
+        chat_app.message_scroll = max_scroll;
+    }
+
+    const size_t first_visible = total_rows > text_rows + chat_app.message_scroll ?
+        total_rows - text_rows - chat_app.message_scroll : 0;
+    const size_t visible_rows = total_rows > first_visible ?
+        total_rows - first_visible < text_rows ? total_rows - first_visible : text_rows : 0;
+    if (visible_rows == 0) {
+        return;
+    }
+
+    chat_draw_visual_ctx_t draw_ctx = {
+        .start_col = start_col,
+        .width = width,
+        .row = 1U + text_rows - visible_rows,
+        .first_visible = first_visible,
+        .max_rows = visible_rows,
+    };
+
+    for (size_t logical = 0;
+         logical < chat_app.message_count && draw_ctx.drawn < visible_rows;
+         logical++) {
         const chat_app_message_t *message = chat_message_at(logical);
         if (!chat_message_matches_current(message)) {
             continue;
         }
-        if (skipped < chat_app.message_scroll) {
-            skipped++;
-            continue;
-        }
-
-        char line[256];
-        chat_format_message(message, line, sizeof(line));
-        const size_t draw_row = row + (drawn - emitted - 1U);
-        const uint8_t attr = message->system ? SOLAR_OS_TUI_ATTR_BOLD : SOLAR_OS_TUI_ATTR_NORMAL;
-        chat_write_cell(draw_row, start_col, width, line, attr);
-        emitted++;
+        (void)chat_emit_wrapped_message(message, width, chat_draw_visual_line, &draw_ctx);
     }
 }
 
@@ -530,10 +943,11 @@ static void chat_draw_input(size_t rows, size_t cols)
 
     solar_os_tui_fill(&chat_app.tui, input_row, 0, 1, cols, ' ', SOLAR_OS_TUI_ATTR_NORMAL);
     solar_os_tui_addstr(&chat_app.tui, input_row, 0, "> ", SOLAR_OS_TUI_ATTR_NORMAL);
-    if (cols > 2U && chat_app.input[chat_app.input_view_offset] != '\0') {
-        char visible[CHAT_APP_INPUT_MAX];
+    if (cols > 2U && chat_app.input != NULL && chat_app.input[chat_app.input_view_offset] != '\0') {
+        char visible[CHAT_APP_LINE_MAX];
         const size_t copy_len = chat_safe_clip_len(chat_app.input + chat_app.input_view_offset,
-                                                   cols - 2U);
+                                                   cols - 2U,
+                                                   sizeof(visible) - 1U);
         memcpy(visible, chat_app.input + chat_app.input_view_offset, copy_len);
         visible[copy_len] = '\0';
         solar_os_tui_addstr(&chat_app.tui, input_row, 2, visible, SOLAR_OS_TUI_ATTR_NORMAL);
@@ -680,13 +1094,16 @@ static void chat_handle_service_event(const solar_os_chat_event_t *event)
 
 static void chat_drain_events(void)
 {
+    if (chat_app.event == NULL) {
+        return;
+    }
+
     for (size_t i = 0; i < CHAT_APP_DRAIN_EVENTS_PER_TICK; i++) {
-        solar_os_chat_event_t event;
-        const esp_err_t err = solar_os_chat_read_event(&event, 0);
+        const esp_err_t err = solar_os_chat_read_event(chat_app.event, 0);
         if (err != ESP_OK) {
             break;
         }
-        chat_handle_service_event(&event);
+        chat_handle_service_event(chat_app.event);
     }
 
     if (chat_app.join_pending) {
@@ -825,12 +1242,20 @@ static void chat_submit_input(solar_os_context_t *ctx)
 {
     (void)ctx;
 
-    if (chat_app.input_len == 0) {
+    if (chat_app.input == NULL || chat_app.input_len == 0) {
         return;
     }
 
-    char line[CHAT_APP_INPUT_MAX];
-    strlcpy(line, chat_app.input, sizeof(line));
+    char *line = heap_caps_malloc(CHAT_APP_INPUT_MAX, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (line == NULL) {
+        line = heap_caps_malloc(CHAT_APP_INPUT_MAX, MALLOC_CAP_8BIT);
+    }
+    if (line == NULL) {
+        chat_set_status("input alloc failed");
+        return;
+    }
+
+    strlcpy(line, chat_app.input, CHAT_APP_INPUT_MAX);
     chat_history_add(line);
     chat_history_cancel();
     chat_set_input("");
@@ -839,10 +1264,12 @@ static void chat_submit_input(solar_os_context_t *ctx)
 
     if (line[0] == '/') {
         chat_execute_command(line);
+        heap_caps_free(line);
         return;
     }
 
     const esp_err_t err = solar_os_chat_send(chat_current_channel_name(), line);
+    heap_caps_free(line);
     if (err == ESP_OK) {
         chat_set_status("sent");
     } else {
@@ -853,7 +1280,10 @@ static void chat_submit_input(solar_os_context_t *ctx)
 
 static void chat_insert_char(char ch)
 {
-    if (chat_app.input_len + 1U >= sizeof(chat_app.input)) {
+    if (chat_app.input == NULL) {
+        return;
+    }
+    if (chat_app.input_len + 1U >= CHAT_APP_INPUT_MAX) {
         chat_set_status("input full");
         return;
     }
@@ -872,6 +1302,9 @@ static void chat_insert_char(char ch)
 
 static void chat_backspace(void)
 {
+    if (chat_app.input == NULL) {
+        return;
+    }
     if (chat_app.input_cursor == 0) {
         return;
     }
@@ -887,6 +1320,9 @@ static void chat_backspace(void)
 
 static void chat_delete(void)
 {
+    if (chat_app.input == NULL) {
+        return;
+    }
     if (chat_app.input_cursor >= chat_app.input_len) {
         return;
     }
@@ -897,6 +1333,15 @@ static void chat_delete(void)
     chat_app.input_len--;
     chat_app.input[chat_app.input_len] = '\0';
     chat_app.redraw = true;
+}
+
+static size_t chat_message_scroll_step(void)
+{
+    const size_t rows = solar_os_tui_rows(&chat_app.tui);
+    const size_t body_rows = rows > CHAT_APP_INPUT_ROWS ? rows - CHAT_APP_INPUT_ROWS : rows;
+    const size_t text_rows = body_rows > 1U ? body_rows - 1U : 1U;
+
+    return text_rows > 1U ? text_rows - 1U : 1U;
 }
 
 static void chat_handle_message_key(solar_os_context_t *ctx, uint8_t ch)
@@ -943,14 +1388,18 @@ static void chat_handle_message_key(solar_os_context_t *ctx, uint8_t ch)
         chat_app.redraw = true;
         break;
     case SOLAR_OS_KEY_PAGE_UP:
-        if (chat_app.message_scroll + 1U < CHAT_APP_MESSAGE_COUNT) {
-            chat_app.message_scroll++;
+        {
+            const size_t step = chat_message_scroll_step();
+            chat_app.message_scroll = SIZE_MAX - chat_app.message_scroll >= step ?
+                chat_app.message_scroll + step : SIZE_MAX;
             chat_app.redraw = true;
         }
         break;
     case SOLAR_OS_KEY_PAGE_DOWN:
-        if (chat_app.message_scroll > 0) {
-            chat_app.message_scroll--;
+        {
+            const size_t step = chat_message_scroll_step();
+            chat_app.message_scroll = chat_app.message_scroll > step ?
+                chat_app.message_scroll - step : 0;
             chat_app.redraw = true;
         }
         break;
@@ -983,6 +1432,39 @@ static void chat_handle_channel_key(uint8_t ch)
         break;
     default:
         break;
+    }
+}
+
+static void *chat_app_calloc(size_t count, size_t size)
+{
+    void *ptr = heap_caps_calloc(count, size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (ptr == NULL) {
+        ptr = heap_caps_calloc(count, size, MALLOC_CAP_8BIT);
+    }
+    return ptr;
+}
+
+static void chat_free_buffers(void)
+{
+    if (chat_app.messages != NULL) {
+        heap_caps_free(chat_app.messages);
+        chat_app.messages = NULL;
+    }
+    if (chat_app.history != NULL) {
+        heap_caps_free(chat_app.history);
+        chat_app.history = NULL;
+    }
+    if (chat_app.input != NULL) {
+        heap_caps_free(chat_app.input);
+        chat_app.input = NULL;
+    }
+    if (chat_app.history_draft != NULL) {
+        heap_caps_free(chat_app.history_draft);
+        chat_app.history_draft = NULL;
+    }
+    if (chat_app.event != NULL) {
+        heap_caps_free(chat_app.event);
+        chat_app.event = NULL;
     }
 }
 
@@ -1019,29 +1501,17 @@ static esp_err_t chat_start(solar_os_context_t *ctx)
         return tui_err;
     }
 
-    chat_app.messages = heap_caps_calloc(CHAT_APP_MESSAGE_COUNT,
-                                         sizeof(chat_app_message_t),
-                                         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (chat_app.messages == NULL) {
-        chat_app.messages = heap_caps_calloc(CHAT_APP_MESSAGE_COUNT,
-                                             sizeof(chat_app_message_t),
-                                             MALLOC_CAP_8BIT);
-    }
-    if (chat_app.messages == NULL) {
-        return ESP_ERR_NO_MEM;
-    }
-
-    chat_app.history = heap_caps_calloc(CHAT_APP_HISTORY_COUNT,
-                                        sizeof(chat_app.history[0]),
-                                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (chat_app.history == NULL) {
-        chat_app.history = heap_caps_calloc(CHAT_APP_HISTORY_COUNT,
-                                            sizeof(chat_app.history[0]),
-                                            MALLOC_CAP_8BIT);
-    }
-    if (chat_app.history == NULL) {
-        heap_caps_free(chat_app.messages);
-        chat_app.messages = NULL;
+    chat_app.messages = chat_app_calloc(CHAT_APP_MESSAGE_COUNT, sizeof(chat_app_message_t));
+    chat_app.history = chat_app_calloc(CHAT_APP_HISTORY_COUNT, sizeof(chat_app.history[0]));
+    chat_app.input = chat_app_calloc(CHAT_APP_INPUT_MAX, 1);
+    chat_app.history_draft = chat_app_calloc(CHAT_APP_INPUT_MAX, 1);
+    chat_app.event = chat_app_calloc(1, sizeof(*chat_app.event));
+    if (chat_app.messages == NULL ||
+        chat_app.history == NULL ||
+        chat_app.input == NULL ||
+        chat_app.history_draft == NULL ||
+        chat_app.event == NULL) {
+        chat_free_buffers();
         return ESP_ERR_NO_MEM;
     }
 
@@ -1063,12 +1533,7 @@ static void chat_stop(solar_os_context_t *ctx)
     (void)ctx;
 
     (void)solar_os_chat_disconnect();
-    if (chat_app.messages != NULL) {
-        heap_caps_free(chat_app.messages);
-    }
-    if (chat_app.history != NULL) {
-        heap_caps_free(chat_app.history);
-    }
+    chat_free_buffers();
     if (chat_app.tui.terminal != NULL) {
         solar_os_terminal_set_cursor_visible(chat_app.tui.terminal, true);
     }
