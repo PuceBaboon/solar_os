@@ -9,4 +9,5 @@ net = false
 media = false
 games = false
 python = false
+lua = false
 utils = false

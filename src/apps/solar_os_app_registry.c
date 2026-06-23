@@ -28,6 +28,9 @@
 #if SOLAR_OS_PACKAGE_PYTHON
 #include "solar_os_python.h"
 #endif
+#if SOLAR_OS_PACKAGE_LUA
+#include "solar_os_lua.h"
+#endif
 #if SOLAR_OS_PACKAGE_MEDIA
 #include "solar_os_view.h"
 #endif
@@ -56,6 +59,9 @@ static const solar_os_app_registry_entry_t registered_apps[] = {
 #endif
 #if SOLAR_OS_PACKAGE_PYTHON
     {"python", "MicroPython runtime", &solar_os_python_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT},
+#endif
+#if SOLAR_OS_PACKAGE_LUA
+    {"lua", "Lua runtime", &solar_os_lua_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT},
 #endif
 #if SOLAR_OS_PACKAGE_MEDIA
     {"view", "image viewer", &solar_os_view_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY},

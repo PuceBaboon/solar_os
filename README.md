@@ -51,6 +51,7 @@ Each flavor enables packages:
 - `media`: Image viewer and image decoder apps.
 - `games`: Built-in games.
 - `python`: MicroPython runtime. This currently also enables `net` because the Python module exposes network bindings.
+- `lua`: Lua runtime. This is independent of `python` and does not pull in `net`.
 - `utils`: Text editor, pagers, reader, clock, and serial terminal app.
 
 Use `pkg` on the device to see the compiled flavor and package set. `version` also prints the active flavor.
@@ -288,6 +289,7 @@ Applications are launched by typing their name at the shell prompt.
 - `aplay`: Play native 16000 Hz stereo 16-bit PCM WAV or MP3 audio from SD card.
 - `clock`: Seven-segment clock, countdown alarm, and stopwatch. Use `clock` for time, `clock -a mm:ss` for a countdown alarm that beeps until quit, and `clock -s` for stopwatch mode.
 - `python`: Interactive MicroPython shell, plus `.py` and `.mpy` script execution from SD card, with a PSRAM heap and a small `solaros` module.
+- `lua`: Interactive Lua shell, plus `.lua` script execution from SD card. Lua allocations prefer PSRAM; `exit()` returns from the REPL to the SolarOS shell.
 - `ssh`: SSH client with UTF-8 terminal rendering, host key checking, password/key auth, `/.ssh/known_hosts`, and `/.ssh/hosts` lookup.
 - `scp`: Copy files to or from a remote SSH server.
 - `curl`: HTTP/HTTPS GET client with redirect support and optional SD card output.
@@ -314,7 +316,9 @@ The native `solaros` module exposes SolarOS services to MicroPython scripts. Top
 
 See [SolarOS Python API](doc/solar_os_python.md) for the full module reference and examples.
 
-Example:
+`lua` starts an interactive Lua prompt. `lua <file.lua> [args...]` runs a Lua script from SD, with `arg[0]` set to the script path and following arguments stored from `arg[1]`. The initial embedded Lua library set includes base, coroutine, table, string, math, UTF-8, and debug. Host-facing Lua `io`, `os`, and dynamic package loading are intentionally not opened; SolarOS service bindings should be added as a dedicated `solaros` Lua module later.
+
+Python example:
 
 ```python
 import solaros

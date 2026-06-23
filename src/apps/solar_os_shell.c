@@ -1516,6 +1516,9 @@ static bool shell_is_path_command(const char *command)
 #if SOLAR_OS_PACKAGE_PYTHON
            strcmp(command, "python") == 0 ||
 #endif
+#if SOLAR_OS_PACKAGE_LUA
+           strcmp(command, "lua") == 0 ||
+#endif
 #if SOLAR_OS_PACKAGE_MEDIA
            strcmp(command, "view") == 0 ||
 #endif

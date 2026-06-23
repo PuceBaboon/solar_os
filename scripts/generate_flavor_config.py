@@ -9,7 +9,7 @@ import sys
 import tomllib
 
 
-PACKAGES = ("core", "audio", "net", "media", "games", "python", "utils")
+PACKAGES = ("core", "audio", "net", "media", "games", "python", "lua", "utils")
 
 
 def c_string(value: str) -> str:
