@@ -34,6 +34,27 @@ pio device monitor -b 115200
 
 The SolarOS version is read from `version.txt` at build time.
 
+## Firmware Flavors
+
+SolarOS can be built from a flavor file in `flavors/`. The default is `flavors/full.toml`.
+
+```sh
+pio run
+SOLAR_OS_FLAVOR=core pio run
+```
+
+Each flavor enables packages:
+
+- `core`: Always enabled. Board hardware services, display/terminal, shell, SD storage, ports, logs, jobs framework, OTA, RTC/time, BLE keyboard, Wi-Fi control, battery, ADC, GPIO, PWM, I2C, UART, SHTC3 sensors, and the `audio` hardware command.
+- `audio`: `arecord`, `aplay`, and MP3 decoding.
+- `net`: Network tools/apps/jobs such as `ping`, `netscan`, `mqtt`, `ssh`, `scp`, `curl`, `web`, `chat`, `httpd`, `slip`, and `sshkey`.
+- `media`: Image viewer and image decoder apps.
+- `games`: Built-in games.
+- `python`: MicroPython runtime. This currently also enables `net` because the Python module exposes network bindings.
+- `utils`: Text editor, pagers, reader, clock, and serial terminal app.
+
+Use `pkg` on the device to see the compiled flavor and package set. `version` also prints the active flavor.
+
 ## Input
 
 Long-press the board `KEY` button to start BLE keyboard pairing. Pairing is remembered in NVS and SolarOS retries reconnects automatically when the keyboard becomes available again.
@@ -55,6 +76,7 @@ If SD identity files are present, `/.shell/user` and `/.shell/hostname` override
 Useful shell behavior:
 
 - `help` lists built-in shell commands.
+- `pkg` shows the compiled firmware flavor and package set.
 - `apps` lists foreground applications.
 - Tab completes commands, subcommands, and filesystem paths where applicable.
 - Up/Down browse command history.
@@ -104,6 +126,7 @@ Port shells are VT100-style shells over the selected byte stream. Text-capable a
 System:
 
 - `version`
+- `pkg`
 - `status`
 - `uptime`
 - `sleep`
@@ -225,7 +248,7 @@ The file form resolves shell-style paths, so `/.shell/log` and `/sdcard/.shell/l
 Applications are launched by typing their name at the shell prompt.
 
 - `arecord`: Record native 16000 Hz stereo 16-bit PCM WAV audio to SD card.
-- `aplay`: Play native 16000 Hz stereo 16-bit PCM WAV audio from SD card.
+- `aplay`: Play native 16000 Hz stereo 16-bit PCM WAV or MP3 audio from SD card.
 - `clock`: Seven-segment clock, countdown alarm, and stopwatch. Use `clock` for time, `clock -a mm:ss` for a countdown alarm that beeps until quit, and `clock -s` for stopwatch mode.
 - `python`: Interactive MicroPython shell, plus `.py` and `.mpy` script execution from SD card, with a PSRAM heap and a small `solaros` module.
 - `ssh`: SSH client with UTF-8 terminal rendering, host key checking, password/key auth, `/.ssh/known_hosts`, and `/.ssh/hosts` lookup.

@@ -3,22 +3,35 @@
 #include <stddef.h>
 #include <string.h>
 
+#include "solar_os_config.h"
 #include "solar_os_batmon_job.h"
 #include "solar_os_bridge_job.h"
+#if SOLAR_OS_PACKAGE_NET
 #include "solar_os_httpd_job.h"
+#endif
 #include "solar_os_log_job.h"
+#if SOLAR_OS_PACKAGE_NET
 #include "solar_os_ntp_sync_job.h"
+#endif
 #include "solar_os_shell_job.h"
+#if SOLAR_OS_PACKAGE_NET
 #include "solar_os_slip_job.h"
+#endif
 
 static const solar_os_job_registry_entry_t registered_jobs[] = {
     {"batmon", "battery voltage trend monitor", &solar_os_batmon_job},
     {"bridge", "raw bidirectional port bridge", &solar_os_bridge_job},
+#if SOLAR_OS_PACKAGE_NET
     {"httpd", "static HTTP file server", &solar_os_httpd_job},
+#endif
     {"log", "stream SolarOS logs to a port or file", &solar_os_log_job},
+#if SOLAR_OS_PACKAGE_NET
     {"ntp-sync", "periodic RTC NTP sync", &solar_os_ntp_sync_job},
+#endif
     {"shell", "VT100 shell on a byte-stream port", &solar_os_shell_job},
+#if SOLAR_OS_PACKAGE_NET
     {"slip", "SLIP IPv4 gateway on a port", &solar_os_slip_job},
+#endif
 };
 
 static const size_t registered_job_count = sizeof(registered_jobs) / sizeof(registered_jobs[0]);

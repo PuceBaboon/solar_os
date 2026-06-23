@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "esp_err.h"
+#include "solar_os_config.h"
 
 #define SOLAR_OS_AUDIO_TONE_MIN_HZ 20U
 #define SOLAR_OS_AUDIO_TONE_MAX_HZ 8000U
@@ -69,7 +70,9 @@ esp_err_t solar_os_audio_play_tone(uint32_t frequency_hz, uint32_t duration_ms, 
 esp_err_t solar_os_audio_measure_level(uint32_t duration_ms, solar_os_audio_level_t *level);
 esp_err_t solar_os_audio_loopback(uint32_t duration_ms, uint8_t volume);
 esp_err_t solar_os_audio_get_wav_info(const char *path, solar_os_audio_wav_info_t *info);
+#if SOLAR_OS_PACKAGE_AUDIO
 esp_err_t solar_os_audio_get_mp3_info(const char *path, solar_os_audio_wav_info_t *info);
+#endif
 esp_err_t solar_os_audio_record_wav(const char *path,
                                     uint32_t duration_ms,
                                     const solar_os_audio_wav_options_t *options,
@@ -78,8 +81,10 @@ esp_err_t solar_os_audio_play_wav(const char *path,
                                   uint8_t volume,
                                   const solar_os_audio_wav_options_t *options,
                                   solar_os_audio_wav_info_t *info);
+#if SOLAR_OS_PACKAGE_AUDIO
 esp_err_t solar_os_audio_play_mp3(const char *path,
                                   uint8_t volume,
                                   const solar_os_audio_wav_options_t *options,
                                   solar_os_audio_wav_info_t *info);
+#endif
 void solar_os_audio_get_status(solar_os_audio_status_t *status);

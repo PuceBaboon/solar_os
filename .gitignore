@@ -1,5 +1,6 @@
 .pio/
 build/
+generated/
 sdkconfig
 sdkconfig.old
 sdkconfig.*

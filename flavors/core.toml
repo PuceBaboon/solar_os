@@ -1,0 +1,12 @@
+[flavor]
+name = "core"
+description = "Minimal SolarOS build with hardware services, shell, storage, OTA, and maintenance commands."
+
+[packages]
+core = true
+audio = false
+net = false
+media = false
+games = false
+python = false
+utils = false

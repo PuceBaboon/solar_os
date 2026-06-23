@@ -118,6 +118,7 @@ static const shell_command_t shell_builtin_commands[] = {
     {"jobs", "list background jobs", solar_os_shell_cmd_jobs},
     {"job", "control background jobs", solar_os_shell_cmd_job},
     {"version", "show SolarOS version", solar_os_shell_cmd_version},
+    {"pkg", "show compiled packages", solar_os_shell_cmd_pkg},
     {"clear", "clear the screen", solar_os_shell_cmd_clear},
     {"sleep", "enter light sleep", solar_os_shell_cmd_sleep},
     {"watch", "repeat a command", cmd_watch},
@@ -134,9 +135,11 @@ static const shell_command_t shell_builtin_commands[] = {
     {"adc", "read expansion analog inputs", solar_os_shell_cmd_adc},
     {"ble", "BLE keyboard control", solar_os_shell_cmd_ble},
     {"wifi", "Wi-Fi station control", solar_os_shell_cmd_wifi},
+#if SOLAR_OS_PACKAGE_NET
     {"mqtt", "MQTT client", solar_os_shell_cmd_mqtt},
     {"ping", "send ICMP echo requests", solar_os_shell_cmd_ping},
     {"netscan", "scan TCP ports", solar_os_shell_cmd_netscan},
+#endif
     {"audio", "audio codec tools", solar_os_shell_cmd_audio},
     {"uart", "UART port tools", solar_os_shell_cmd_uart},
     {"i2c", "I2C bus tools", solar_os_shell_cmd_i2c},
@@ -146,7 +149,9 @@ static const shell_command_t shell_builtin_commands[] = {
     {"time", "read or set local time", solar_os_shell_cmd_time},
     {"ntp", "sync RTC from network time", solar_os_shell_cmd_ntp},
     {"ota", "OTA update control", solar_os_shell_cmd_ota},
+#if SOLAR_OS_PACKAGE_NET
     {"sshkey", "manage SSH keys", solar_os_shell_cmd_sshkey},
+#endif
     {"temperature", "read SHTC3 temperature", solar_os_shell_cmd_temperature},
     {"humidity", "read SHTC3 humidity", solar_os_shell_cmd_humidity},
     {"cd", "change directory", cmd_cd},
@@ -195,6 +200,7 @@ static const char * const wifi_subcommands[] = {
     "nat",
 };
 
+#if SOLAR_OS_PACKAGE_NET
 static const char * const mqtt_subcommands[] = {
     "status",
     "connect",
@@ -202,6 +208,7 @@ static const char * const mqtt_subcommands[] = {
     "publish",
     "subscribe",
 };
+#endif
 
 static const char * const job_subcommands[] = {
     "status",
@@ -283,12 +290,14 @@ static const char * const audio_subcommands[] = {
     "off",
 };
 
+#if SOLAR_OS_PACKAGE_NET
 static const char * const sshkey_subcommands[] = {
     "status",
     "gen",
     "pub",
     "rm",
 };
+#endif
 
 static const char * const ota_subcommands[] = {
     "status",
@@ -303,7 +312,9 @@ static const shell_subcommand_set_t shell_subcommand_sets[] = {
     {"job", job_subcommands, sizeof(job_subcommands) / sizeof(job_subcommands[0])},
     {"ble", ble_subcommands, sizeof(ble_subcommands) / sizeof(ble_subcommands[0])},
     {"wifi", wifi_subcommands, sizeof(wifi_subcommands) / sizeof(wifi_subcommands[0])},
+#if SOLAR_OS_PACKAGE_NET
     {"mqtt", mqtt_subcommands, sizeof(mqtt_subcommands) / sizeof(mqtt_subcommands[0])},
+#endif
     {"sd", sd_subcommands, sizeof(sd_subcommands) / sizeof(sd_subcommands[0])},
     {"i2c", i2c_subcommands, sizeof(i2c_subcommands) / sizeof(i2c_subcommands[0])},
     {"uart", uart_subcommands, sizeof(uart_subcommands) / sizeof(uart_subcommands[0])},
@@ -314,7 +325,9 @@ static const shell_subcommand_set_t shell_subcommand_sets[] = {
     {"pwm", pwm_subcommands, sizeof(pwm_subcommands) / sizeof(pwm_subcommands[0])},
     {"battery", battery_subcommands, sizeof(battery_subcommands) / sizeof(battery_subcommands[0])},
     {"audio", audio_subcommands, sizeof(audio_subcommands) / sizeof(audio_subcommands[0])},
+#if SOLAR_OS_PACKAGE_NET
     {"sshkey", sshkey_subcommands, sizeof(sshkey_subcommands) / sizeof(sshkey_subcommands[0])},
+#endif
     {"ota", ota_subcommands, sizeof(ota_subcommands) / sizeof(ota_subcommands[0])},
 };
 
@@ -1481,14 +1494,26 @@ static bool shell_is_path_command(const char *command)
            strcmp(command, "rm") == 0 ||
            strcmp(command, "mv") == 0 ||
            strcmp(command, "cp") == 0 ||
+#if SOLAR_OS_PACKAGE_AUDIO
            strcmp(command, "aplay") == 0 ||
            strcmp(command, "arecord") == 0 ||
+#endif
+#if SOLAR_OS_PACKAGE_UTILS
            strcmp(command, "edit") == 0 ||
            strcmp(command, "less") == 0 ||
            strcmp(command, "reader") == 0 ||
+#endif
+#if SOLAR_OS_PACKAGE_PYTHON
            strcmp(command, "python") == 0 ||
+#endif
+#if SOLAR_OS_PACKAGE_MEDIA
            strcmp(command, "view") == 0 ||
+#endif
+#if SOLAR_OS_PACKAGE_NET
            strcmp(command, "scp") == 0;
+#else
+           false;
+#endif
 }
 
 static bool shell_path_completion_dirs_only(const char *command)

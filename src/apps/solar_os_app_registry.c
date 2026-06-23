@@ -5,39 +5,67 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
+#include "solar_os_config.h"
+#if SOLAR_OS_PACKAGE_AUDIO
 #include "solar_os_audio_apps.h"
+#endif
+#if SOLAR_OS_PACKAGE_NET
 #include "solar_os_chat_app.h"
-#include "solar_os_clock.h"
-#include "solar_os_com.h"
 #include "solar_os_curl.h"
-#include "solar_os_edit.h"
-#include "solar_os_invaders.h"
-#include "solar_os_less.h"
-#include "solar_os_python.h"
 #include "solar_os_scp_app.h"
 #include "solar_os_ssh_app.h"
-#include "solar_os_view.h"
 #include "solar_os_web.h"
+#endif
+#if SOLAR_OS_PACKAGE_UTILS
+#include "solar_os_clock.h"
+#include "solar_os_com.h"
+#include "solar_os_edit.h"
+#include "solar_os_less.h"
+#endif
+#if SOLAR_OS_PACKAGE_GAMES
+#include "solar_os_invaders.h"
+#endif
+#if SOLAR_OS_PACKAGE_PYTHON
+#include "solar_os_python.h"
+#endif
+#if SOLAR_OS_PACKAGE_MEDIA
+#include "solar_os_view.h"
+#endif
 
 static const solar_os_app_registry_entry_t registered_apps[] = {
+#if SOLAR_OS_PACKAGE_AUDIO
     {"aplay", "play WAV/MP3 audio", &solar_os_aplay_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY},
     {"arecord", "record WAV audio", &solar_os_arecord_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY},
+#endif
+#if SOLAR_OS_PACKAGE_NET
     {"chat", "gateway chat client", &solar_os_chat_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY},
-    {"clock", "clock, countdown alarm, stopwatch", &solar_os_clock_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY},
-    {"com", "serial terminal", &solar_os_com_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY},
     {"curl", "HTTP client", &solar_os_curl_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT},
-    {"edit", "text editor", &solar_os_edit_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT},
-    {"invaders", "arcade shooter", &solar_os_invaders_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY},
-    {"less", "text file pager", &solar_os_less_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT},
-    {"python", "MicroPython runtime", &solar_os_python_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT},
-    {"reader", "resumable text reader", &solar_os_reader_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT},
     {"scp", "SCP file copy", &solar_os_scp_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT},
     {"ssh", "SSH client", &solar_os_ssh_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT},
-    {"view", "image viewer", &solar_os_view_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY},
     {"web", "simple web browser", &solar_os_web_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY},
+#endif
+#if SOLAR_OS_PACKAGE_UTILS
+    {"clock", "clock, countdown alarm, stopwatch", &solar_os_clock_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY},
+    {"com", "serial terminal", &solar_os_com_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY},
+    {"edit", "text editor", &solar_os_edit_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT},
+    {"less", "text file pager", &solar_os_less_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT},
+    {"reader", "resumable text reader", &solar_os_reader_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT},
+#endif
+#if SOLAR_OS_PACKAGE_GAMES
+    {"invaders", "arcade shooter", &solar_os_invaders_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY},
+#endif
+#if SOLAR_OS_PACKAGE_PYTHON
+    {"python", "MicroPython runtime", &solar_os_python_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT},
+#endif
+#if SOLAR_OS_PACKAGE_MEDIA
+    {"view", "image viewer", &solar_os_view_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY},
+#endif
+    {NULL, NULL, NULL, 0},
 };
 
-static const size_t registered_app_count = sizeof(registered_apps) / sizeof(registered_apps[0]);
+#define REGISTERED_APP_STORAGE_COUNT (sizeof(registered_apps) / sizeof(registered_apps[0]))
+
+static const size_t registered_app_count = REGISTERED_APP_STORAGE_COUNT - 1U;
 static char app_owners[sizeof(registered_apps) / sizeof(registered_apps[0])][SOLAR_OS_APP_OWNER_MAX];
 static portMUX_TYPE app_owner_lock = portMUX_INITIALIZER_UNLOCKED;
 

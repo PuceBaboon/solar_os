@@ -21,7 +21,10 @@
 #include "solar_os_app_registry.h"
 #include "solar_os_battery.h"
 #include "solar_os_ble_keyboard.h"
+#include "solar_os_config.h"
+#if SOLAR_OS_PACKAGE_NET
 #include "solar_os_chat.h"
+#endif
 #include "solar_os_cdc.h"
 #include "solar_os_gpio.h"
 #include "solar_os_gfx_internal.h"
@@ -29,7 +32,9 @@
 #include "solar_os_jobs.h"
 #include "solar_os_log.h"
 #include "solar_os_memory.h"
+#if SOLAR_OS_PACKAGE_NET
 #include "solar_os_mqtt.h"
+#endif
 #include "solar_os_ota.h"
 #include "solar_os_port.h"
 #include "solar_os_pwm.h"
@@ -563,6 +568,7 @@ static void init_peripherals(void)
         SOLAR_OS_LOGW(TAG, "OTA service unavailable: %s", esp_err_to_name(ota_err));
     }
 
+#if SOLAR_OS_PACKAGE_NET
     const esp_err_t mqtt_err = solar_os_mqtt_init();
     if (mqtt_err != ESP_OK) {
         SOLAR_OS_LOGW(TAG, "MQTT service unavailable: %s", esp_err_to_name(mqtt_err));
@@ -572,6 +578,7 @@ static void init_peripherals(void)
     if (chat_err != ESP_OK) {
         SOLAR_OS_LOGW(TAG, "Chat service unavailable: %s", esp_err_to_name(chat_err));
     }
+#endif
 
     const esp_err_t uart_err = solar_os_uart_init();
     if (uart_err != ESP_OK) {

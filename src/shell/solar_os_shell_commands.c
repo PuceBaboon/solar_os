@@ -26,19 +26,24 @@
 #include "solar_os_audio.h"
 #include "solar_os_battery.h"
 #include "solar_os_ble_keyboard.h"
+#include "solar_os_config.h"
 #include "solar_os_gpio.h"
 #include "solar_os_i2c.h"
 #include "solar_os_identity.h"
 #include "solar_os_jobs.h"
 #include "solar_os_log.h"
+#if SOLAR_OS_PACKAGE_NET
 #include "solar_os_mqtt.h"
 #include "solar_os_net.h"
+#endif
 #include "solar_os_ota.h"
 #include "solar_os_port.h"
 #include "solar_os_pwm.h"
 #include "solar_os_sensors.h"
 #include "solar_os_shell.h"
+#if SOLAR_OS_PACKAGE_NET
 #include "solar_os_ssh_keys.h"
+#endif
 #include "solar_os_storage.h"
 #include "solar_os_keys.h"
 #include "solar_os_terminal.h"
@@ -288,6 +293,45 @@ void solar_os_shell_cmd_version(solar_os_context_t *ctx, int argc, char **argv)
     }
 
     solar_os_shell_io_printf(term, "SolarOS %s\n", SOLAR_OS_VERSION);
+    solar_os_shell_io_printf(term, "Flavor: %s\n", SOLAR_OS_FLAVOR_NAME);
+    solar_os_shell_io_printf(term, "Packages: %s\n", SOLAR_OS_PACKAGE_LIST);
+}
+
+static void pkg_print_one(solar_os_shell_io_t *term,
+                          const char *name,
+                          bool enabled,
+                          const char *summary)
+{
+    solar_os_shell_io_printf(term,
+                             "%-8s %-8s %s\n",
+                             name,
+                             enabled ? "enabled" : "disabled",
+                             summary);
+}
+
+void solar_os_shell_cmd_pkg(solar_os_context_t *ctx, int argc, char **argv)
+{
+    solar_os_shell_io_t *term = terminal(ctx);
+
+    (void)argv;
+
+    if (argc != 1) {
+        solar_os_shell_io_writeln(term, "usage: pkg");
+        return;
+    }
+
+    solar_os_shell_io_printf(term, "Flavor: %s\n", SOLAR_OS_FLAVOR_NAME);
+    if (SOLAR_OS_FLAVOR_DESCRIPTION[0] != '\0') {
+        solar_os_shell_io_printf(term, "%s\n", SOLAR_OS_FLAVOR_DESCRIPTION);
+    }
+    solar_os_shell_io_writeln(term, "Packages:");
+    pkg_print_one(term, "core", SOLAR_OS_PACKAGE_CORE, "hardware services, shell, storage, OTA");
+    pkg_print_one(term, "audio", SOLAR_OS_PACKAGE_AUDIO, "audio recorder/player apps and MP3");
+    pkg_print_one(term, "net", SOLAR_OS_PACKAGE_NET, "network apps, net tools, and network jobs");
+    pkg_print_one(term, "media", SOLAR_OS_PACKAGE_MEDIA, "image viewer and image decoders");
+    pkg_print_one(term, "games", SOLAR_OS_PACKAGE_GAMES, "built-in games");
+    pkg_print_one(term, "python", SOLAR_OS_PACKAGE_PYTHON, "MicroPython runtime");
+    pkg_print_one(term, "utils", SOLAR_OS_PACKAGE_UTILS, "editor, pager, reader, clock, serial terminal");
 }
 
 static void ota_print_usage(solar_os_shell_io_t *term)
@@ -3336,6 +3380,7 @@ void solar_os_shell_cmd_wifi(solar_os_context_t *ctx, int argc, char **argv)
     wifi_print_usage(term);
 }
 
+#if SOLAR_OS_PACKAGE_NET
 static void ping_print_usage(solar_os_shell_io_t *term)
 {
     solar_os_shell_io_writeln(term, "usage: ping <host> [count]");
@@ -4275,6 +4320,7 @@ void solar_os_shell_cmd_mqtt(solar_os_context_t *ctx, int argc, char **argv)
         mqtt_print_usage(term);
     }
 }
+#endif
 
 static void audio_print_gain(solar_os_shell_io_t *term, float gain_db)
 {
@@ -5786,6 +5832,7 @@ void solar_os_shell_cmd_ntp(solar_os_context_t *ctx, int argc, char **argv)
     print_datetime_line(term, timezone, &local);
 }
 
+#if SOLAR_OS_PACKAGE_NET
 static void sshkey_print_usage(solar_os_shell_io_t *term)
 {
     solar_os_shell_io_writeln(term, "usage:");
@@ -5940,6 +5987,7 @@ void solar_os_shell_cmd_sshkey(solar_os_context_t *ctx, int argc, char **argv)
 
     sshkey_print_usage(term);
 }
+#endif
 
 static bool read_environment_for_shell(solar_os_shell_io_t *term, solar_os_environment_t *environment)
 {

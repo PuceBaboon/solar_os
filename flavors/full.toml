@@ -1,0 +1,12 @@
+[flavor]
+name = "full"
+description = "Default SolarOS build with all built-in packages enabled."
+
+[packages]
+core = true
+audio = true
+net = true
+media = true
+games = true
+python = true
+utils = true
