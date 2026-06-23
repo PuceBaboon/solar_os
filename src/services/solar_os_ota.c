@@ -16,9 +16,11 @@
 #include "freertos/task.h"
 #include "nvs.h"
 #include "sdkconfig.h"
+#include "solar_os_config.h"
 
 #define OTA_NVS_NAMESPACE "ota"
 #define OTA_NVS_URL_KEY "url"
+#define OTA_NVS_FLAVOR_KEY "flavor"
 #define OTA_HTTP_TIMEOUT_MS 15000
 #define OTA_MANIFEST_MAX 512
 
@@ -26,7 +28,12 @@
 #define SOLAR_OS_VERSION "0.0.0"
 #endif
 
+#ifndef SOLAR_OS_FLAVOR_NAME
+#define SOLAR_OS_FLAVOR_NAME "full"
+#endif
+
 static char ota_url[SOLAR_OS_OTA_URL_MAX] = SOLAR_OS_OTA_DEFAULT_URL;
+static char ota_target_flavor[SOLAR_OS_OTA_FLAVOR_MAX] = SOLAR_OS_FLAVOR_NAME;
 static bool ota_loaded;
 static const char *TAG = "solar_os_ota";
 
@@ -56,6 +63,20 @@ static bool ota_url_is_valid(const char *url)
     return true;
 }
 
+static bool ota_flavor_is_valid(const char *flavor)
+{
+    if (flavor == NULL || flavor[0] == '\0' || strlen(flavor) >= SOLAR_OS_OTA_FLAVOR_MAX) {
+        return false;
+    }
+
+    for (const unsigned char *p = (const unsigned char *)flavor; *p != '\0'; p++) {
+        if (!isalnum(*p) && *p != '.' && *p != '_' && *p != '-') {
+            return false;
+        }
+    }
+    return true;
+}
+
 static bool ota_url_has_suffix(const char *url, const char *suffix)
 {
     if (url == NULL || suffix == NULL) {
@@ -64,6 +85,26 @@ static bool ota_url_has_suffix(const char *url, const char *suffix)
     const size_t url_len = strlen(url);
     const size_t suffix_len = strlen(suffix);
     return url_len >= suffix_len && strcmp(url + url_len - suffix_len, suffix) == 0;
+}
+
+static bool ota_url_has_flavor_suffix(const char *url, const char *flavor)
+{
+    if (url == NULL || flavor == NULL || flavor[0] == '\0') {
+        return false;
+    }
+
+    size_t url_len = strlen(url);
+    while (url_len > 0 && url[url_len - 1] == '/') {
+        url_len--;
+    }
+
+    const size_t flavor_len = strlen(flavor);
+    if (url_len < flavor_len ||
+        memcmp(url + url_len - flavor_len, flavor, flavor_len) != 0) {
+        return false;
+    }
+
+    return url_len == flavor_len || url[url_len - flavor_len - 1] == '/';
 }
 
 static esp_err_t ota_build_artifact_url(const char *leaf, char *out, size_t out_len)
@@ -96,7 +137,16 @@ static esp_err_t ota_build_artifact_url(const char *leaf, char *out, size_t out_
 
     const size_t url_len = strlen(ota_url);
     const bool has_slash = url_len > 0 && ota_url[url_len - 1] == '/';
-    const int written = snprintf(out, out_len, "%s%s%s", ota_url, has_slash ? "" : "/", leaf);
+    const bool has_flavor = ota_url_has_flavor_suffix(ota_url, ota_target_flavor);
+    const int written = has_flavor ?
+        snprintf(out, out_len, "%s%s%s", ota_url, has_slash ? "" : "/", leaf) :
+        snprintf(out,
+                 out_len,
+                 "%s%s%s/%s",
+                 ota_url,
+                 has_slash ? "" : "/",
+                 ota_target_flavor,
+                 leaf);
     return written >= 0 && (size_t)written < out_len ? ESP_OK : ESP_ERR_INVALID_SIZE;
 }
 
@@ -107,6 +157,8 @@ static void ota_load(void)
     }
     ota_loaded = true;
 
+    strlcpy(ota_target_flavor, SOLAR_OS_FLAVOR_NAME, sizeof(ota_target_flavor));
+
     nvs_handle_t nvs;
     esp_err_t ret = nvs_open(OTA_NVS_NAMESPACE, NVS_READONLY, &nvs);
     if (ret != ESP_OK) {
@@ -116,10 +168,17 @@ static void ota_load(void)
     char stored_url[SOLAR_OS_OTA_URL_MAX];
     size_t url_len = sizeof(stored_url);
     ret = nvs_get_str(nvs, OTA_NVS_URL_KEY, stored_url, &url_len);
-    nvs_close(nvs);
-
     if (ret == ESP_OK && ota_url_is_valid(stored_url)) {
         strlcpy(ota_url, stored_url, sizeof(ota_url));
+    }
+
+    char stored_flavor[SOLAR_OS_OTA_FLAVOR_MAX];
+    size_t flavor_len = sizeof(stored_flavor);
+    ret = nvs_get_str(nvs, OTA_NVS_FLAVOR_KEY, stored_flavor, &flavor_len);
+    nvs_close(nvs);
+
+    if (ret == ESP_OK && ota_flavor_is_valid(stored_flavor)) {
+        strlcpy(ota_target_flavor, stored_flavor, sizeof(ota_target_flavor));
     }
 }
 
@@ -132,6 +191,9 @@ static esp_err_t ota_save(void)
     }
 
     ret = nvs_set_str(nvs, OTA_NVS_URL_KEY, ota_url);
+    if (ret == ESP_OK) {
+        ret = nvs_set_str(nvs, OTA_NVS_FLAVOR_KEY, ota_target_flavor);
+    }
     if (ret == ESP_OK) {
         ret = nvs_commit(nvs);
     }
@@ -419,6 +481,27 @@ esp_err_t solar_os_ota_set_url(const char *url)
     return ota_save();
 }
 
+void solar_os_ota_get_flavor(char *flavor, size_t len)
+{
+    if (flavor == NULL || len == 0) {
+        return;
+    }
+
+    ota_load();
+    strlcpy(flavor, ota_target_flavor, len);
+}
+
+esp_err_t solar_os_ota_set_flavor(const char *flavor)
+{
+    ota_load();
+    if (!ota_flavor_is_valid(flavor)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    strlcpy(ota_target_flavor, flavor, sizeof(ota_target_flavor));
+    return ota_save();
+}
+
 esp_err_t solar_os_ota_get_artifact_urls(char *version_url,
                                          size_t version_url_len,
                                          char *firmware_url,
@@ -449,6 +532,8 @@ esp_err_t solar_os_ota_get_status(solar_os_ota_status_t *status)
 
     memset(status, 0, sizeof(*status));
     solar_os_ota_get_url(status->url, sizeof(status->url));
+    strlcpy(status->compiled_flavor, SOLAR_OS_FLAVOR_NAME, sizeof(status->compiled_flavor));
+    solar_os_ota_get_flavor(status->target_flavor, sizeof(status->target_flavor));
     status->ota_partition_count = esp_ota_get_app_partition_count();
 
     ota_fill_partition(&status->running, esp_ota_get_running_partition());
@@ -474,6 +559,8 @@ esp_err_t solar_os_ota_check(solar_os_ota_check_result_t *result)
     }
 
     memset(result, 0, sizeof(*result));
+    strlcpy(result->compiled_flavor, SOLAR_OS_FLAVOR_NAME, sizeof(result->compiled_flavor));
+    solar_os_ota_get_flavor(result->target_flavor, sizeof(result->target_flavor));
     strlcpy(result->current_version, SOLAR_OS_VERSION, sizeof(result->current_version));
     result->status_code = -1;
     result->content_length = -1;
@@ -503,10 +590,14 @@ esp_err_t solar_os_ota_check(solar_os_ota_check_result_t *result)
         return err;
     }
 
-    result->update_available = strcmp(result->available_version, SOLAR_OS_VERSION) != 0;
+    result->update_available =
+        strcmp(result->available_version, SOLAR_OS_VERSION) != 0 ||
+        strcmp(result->target_flavor, SOLAR_OS_FLAVOR_NAME) != 0;
     SOLAR_OS_LOGI(TAG,
-             "check current=%s available=%s update=%s",
+             "check current=%s/%s target=%s available=%s update=%s",
              SOLAR_OS_VERSION,
+             SOLAR_OS_FLAVOR_NAME,
+             result->target_flavor,
              result->available_version,
              result->update_available ? "yes" : "no");
     return ESP_OK;

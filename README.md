@@ -194,7 +194,7 @@ Networking:
 - `wifi nat [status|on|off]`: enable or disable persistent IPv4 NAT for APSTA.
 - `mqtt [status|connect|disconnect|publish|subscribe]`: MQTT/MQTTS client with broker URL and credentials stored in NVS.
 - `ping <host>`
-- `ota [status|check|upgrade|url|boot]`: inspect OTA partitions, check `version.txt`, stream `firmware.bin` into the inactive OTA slot, configure the OTA base URL, or select an OTA slot to boot. The default base URL is `https://hypergraph.cloud/solaros/latest`; the repository root can keep immutable version folders and point `latest` at the current release.
+- `ota [status|check|upgrade|url|flavor|boot]`: inspect OTA partitions, check `version.txt`, stream `firmware.bin` into the inactive OTA slot, configure the OTA base URL or target flavor, or select an OTA slot to boot. The default base URL is `https://hypergraph.cloud/solaros/latest`; SolarOS appends the OTA target flavor, so the full flavor checks `latest/full/version.txt` and downloads `latest/full/firmware.bin`.
 - `sshkey [status|gen|pub|rm]`
 
 `wifi ap on [ssid [password [open|wpa|wpa2|wpa/wpa2]]]` starts an access point. Supplying an SSID saves the AP settings in NVS; later `wifi ap on` reuses the saved SSID/password/auth mode, or falls back to the default open AP when no saved AP exists. With no password it creates an open AP. With a password and no explicit auth mode it uses WPA2. ESP-IDF does not support WEP in SoftAP mode, so SolarOS rejects `wep` for AP mode.
@@ -202,6 +202,33 @@ Networking:
 `wifi nat on` saves NAT as enabled and activates it when both the station link and SoftAP are up. It stays in a waiting state until APSTA has an upstream IP address.
 
 `mqtt connect mqtt://host[:port] [username [password]]` or `mqtt connect mqtts://host[:port] [username [password]]` saves the broker settings in NVS. Later `mqtt connect` reuses the saved URL and credentials without requiring an SD card.
+
+## OTA Release Layout
+
+OTA artifacts are flavor-aware. A release directory can hold several firmware flavors under the same version:
+
+```text
+solaros/
+  1.6.0/
+    full/
+      version.txt
+      firmware.bin
+    core/
+      version.txt
+      firmware.bin
+  latest -> 1.6.0
+```
+
+By default, the OTA target flavor is the flavor compiled into the running firmware. It can be changed from the device:
+
+```text
+ota flavor
+ota flavor core
+ota check
+ota upgrade
+```
+
+With the default OTA URL, a device targeting `full` uses `https://hypergraph.cloud/solaros/latest/full/`, while a device targeting `core` uses `https://hypergraph.cloud/solaros/latest/core/`. If `ota url` is set directly to a `.bin` file, SolarOS treats that binary as exact and reads `version.txt` next to it. `ota check` reports an update when either the version differs or the target flavor differs from the currently running compiled flavor.
 
 ## Built-In Jobs
 

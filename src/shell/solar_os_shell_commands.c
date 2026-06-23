@@ -341,6 +341,7 @@ static void ota_print_usage(solar_os_shell_io_t *term)
     solar_os_shell_io_writeln(term, "  ota check");
     solar_os_shell_io_writeln(term, "  ota upgrade");
     solar_os_shell_io_writeln(term, "  ota url [url]");
+    solar_os_shell_io_writeln(term, "  ota flavor [flavor]");
     solar_os_shell_io_writeln(term, "  ota boot 0|1");
 }
 
@@ -384,6 +385,8 @@ static void ota_print_status(solar_os_shell_io_t *term)
     }
 
     solar_os_shell_io_printf(term, "SolarOS: %s\n", SOLAR_OS_VERSION);
+    solar_os_shell_io_printf(term, "Compiled flavor: %s\n", status.compiled_flavor);
+    solar_os_shell_io_printf(term, "OTA flavor: %s\n", status.target_flavor);
     solar_os_shell_io_printf(term, "URL: %s\n", status.url);
     solar_os_shell_io_printf(term,
                              "OTA partitions: %u\n",
@@ -412,8 +415,14 @@ static void ota_print_check_result(solar_os_shell_io_t *term,
         return;
     }
 
-    solar_os_shell_io_printf(term, "current: %s\n", result->current_version);
-    solar_os_shell_io_printf(term, "available: %s\n", result->available_version);
+    solar_os_shell_io_printf(term,
+                             "current: %s %s\n",
+                             result->current_version,
+                             result->compiled_flavor);
+    solar_os_shell_io_printf(term,
+                             "available: %s %s\n",
+                             result->available_version,
+                             result->target_flavor);
     solar_os_shell_io_printf(term, "version URL: %s\n", result->version_url);
     solar_os_shell_io_printf(term, "firmware URL: %s\n", result->firmware_url);
     solar_os_shell_io_printf(term,
@@ -659,6 +668,48 @@ void solar_os_shell_cmd_ota(solar_os_context_t *ctx, int argc, char **argv)
             solar_os_shell_io_printf(term, "ota url: invalid URL: %s\n", argv[2]);
         } else {
             solar_os_shell_io_printf(term, "ota url: save failed: %s\n", esp_err_to_name(err));
+        }
+        return;
+    }
+
+    if (strcmp(argv[1], "flavor") == 0) {
+        if (argc == 2) {
+            solar_os_ota_status_t status;
+            char version_url[SOLAR_OS_OTA_ARTIFACT_URL_MAX];
+            char firmware_url[SOLAR_OS_OTA_ARTIFACT_URL_MAX];
+            const esp_err_t err = solar_os_ota_get_status(&status);
+            if (err != ESP_OK) {
+                solar_os_shell_io_printf(term,
+                                         "ota flavor: status failed: %s\n",
+                                         esp_err_to_name(err));
+                return;
+            }
+            solar_os_shell_io_printf(term, "compiled: %s\n", status.compiled_flavor);
+            solar_os_shell_io_printf(term, "target: %s\n", status.target_flavor);
+            if (solar_os_ota_get_artifact_urls(version_url,
+                                               sizeof(version_url),
+                                               firmware_url,
+                                               sizeof(firmware_url)) == ESP_OK) {
+                solar_os_shell_io_printf(term, "version: %s\n", version_url);
+                solar_os_shell_io_printf(term, "firmware: %s\n", firmware_url);
+            }
+            return;
+        }
+        if (argc != 3) {
+            solar_os_shell_io_writeln(term, "usage: ota flavor [flavor]");
+            return;
+        }
+
+        const esp_err_t err = solar_os_ota_set_flavor(argv[2]);
+        if (err == ESP_OK) {
+            solar_os_shell_io_printf(term, "ota flavor: %s\n", argv[2]);
+        } else if (err == ESP_ERR_INVALID_ARG) {
+            solar_os_shell_io_printf(term, "ota flavor: invalid value: %s\n", argv[2]);
+            solar_os_shell_io_writeln(term, "values: letters, numbers, dot, underscore, dash");
+        } else {
+            solar_os_shell_io_printf(term,
+                                     "ota flavor: save failed: %s\n",
+                                     esp_err_to_name(err));
         }
         return;
     }
@@ -1790,10 +1841,14 @@ void solar_os_shell_cmd_setterm(solar_os_context_t *ctx, int argc, char **argv)
     if (strcmp(argv[1], "otaurl") == 0 || strcmp(argv[1], "ota") == 0) {
         if (argc == 2) {
             char url[SOLAR_OS_OTA_URL_MAX];
+            char target_flavor[SOLAR_OS_OTA_FLAVOR_MAX];
             char version_url[SOLAR_OS_OTA_ARTIFACT_URL_MAX];
             char firmware_url[SOLAR_OS_OTA_ARTIFACT_URL_MAX];
             solar_os_ota_get_url(url, sizeof(url));
+            solar_os_ota_get_flavor(target_flavor, sizeof(target_flavor));
             solar_os_shell_io_printf(term, "otaurl: %s\n", url);
+            solar_os_shell_io_printf(term, "compiled flavor: %s\n", SOLAR_OS_FLAVOR_NAME);
+            solar_os_shell_io_printf(term, "ota flavor: %s\n", target_flavor);
             if (solar_os_ota_get_artifact_urls(version_url,
                                                sizeof(version_url),
                                                firmware_url,

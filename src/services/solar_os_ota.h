@@ -11,6 +11,7 @@
 #define SOLAR_OS_OTA_ARTIFACT_URL_MAX 220
 #define SOLAR_OS_OTA_LABEL_MAX 17
 #define SOLAR_OS_OTA_VERSION_MAX 32
+#define SOLAR_OS_OTA_FLAVOR_MAX 32
 #define SOLAR_OS_OTA_PROJECT_MAX 32
 #define SOLAR_OS_OTA_STATE_MAX 16
 #define SOLAR_OS_OTA_VERSION_FILE "version.txt"
@@ -38,6 +39,8 @@ typedef struct {
 
 typedef struct {
     char url[SOLAR_OS_OTA_URL_MAX];
+    char compiled_flavor[SOLAR_OS_OTA_FLAVOR_MAX];
+    char target_flavor[SOLAR_OS_OTA_FLAVOR_MAX];
     uint8_t ota_partition_count;
     solar_os_ota_partition_t running;
     solar_os_ota_partition_t boot;
@@ -45,6 +48,8 @@ typedef struct {
 } solar_os_ota_status_t;
 
 typedef struct {
+    char compiled_flavor[SOLAR_OS_OTA_FLAVOR_MAX];
+    char target_flavor[SOLAR_OS_OTA_FLAVOR_MAX];
     char current_version[SOLAR_OS_OTA_VERSION_MAX];
     char available_version[SOLAR_OS_OTA_VERSION_MAX];
     char version_url[SOLAR_OS_OTA_ARTIFACT_URL_MAX];
@@ -69,6 +74,8 @@ typedef void (*solar_os_ota_progress_cb_t)(const solar_os_ota_progress_t *progre
 esp_err_t solar_os_ota_init(void);
 void solar_os_ota_get_url(char *url, size_t len);
 esp_err_t solar_os_ota_set_url(const char *url);
+void solar_os_ota_get_flavor(char *flavor, size_t len);
+esp_err_t solar_os_ota_set_flavor(const char *flavor);
 esp_err_t solar_os_ota_get_artifact_urls(char *version_url,
                                          size_t version_url_len,
                                          char *firmware_url,

@@ -304,6 +304,7 @@ static const char * const ota_subcommands[] = {
     "check",
     "upgrade",
     "url",
+    "flavor",
     "boot",
 };
 
