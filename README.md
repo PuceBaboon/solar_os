@@ -200,7 +200,7 @@ Power profiles:
 
 Networking:
 
-- `ble [status|scan|pair|forget|gatt]`: `scan` lists nearby BLE devices; `pair` starts the BLE keyboard pairing scan. SolarOS remembers up to three keyboards and reconnects the most recent one first.
+- `ble [status|scan|pair|cancel|forget|gatt]`: `scan` lists nearby BLE devices; `pair` starts BLE keyboard pairing, and `cancel` exits pairing/pending pairing. SolarOS remembers one keyboard and reconnects it automatically.
 - `ble gatt [status|connect|disconnect|services|chars|read|write|write-nr]`: connect to one generic BLE GATT peripheral, list services and characteristics, and read/write characteristic handles.
 - `wifi`: open the Wi-Fi status/control TUI.
 - `wifi [status|on|off|scan|connect|disconnect|known|forget|nat]`

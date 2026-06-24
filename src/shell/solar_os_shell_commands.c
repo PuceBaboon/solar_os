@@ -3521,6 +3521,20 @@ void solar_os_shell_cmd_ble(solar_os_context_t *ctx, int argc, char **argv)
         return;
     }
 
+    if (strcmp(argv[1], "cancel") == 0) {
+        if (argc != 2) {
+            solar_os_shell_io_writeln(term, "usage: ble cancel");
+            return;
+        }
+        const esp_err_t err = solar_os_ble_keyboard_cancel_pairing();
+        if (err == ESP_OK) {
+            solar_os_shell_io_writeln(term, "BLE pairing cancelled");
+        } else {
+            solar_os_shell_io_printf(term, "BLE pairing cancel failed: %s\n", esp_err_to_name(err));
+        }
+        return;
+    }
+
     if (strcmp(argv[1], "forget") == 0) {
         const esp_err_t err = solar_os_ble_keyboard_forget();
         if (err == ESP_OK) {
@@ -3536,7 +3550,7 @@ void solar_os_shell_cmd_ble(solar_os_context_t *ctx, int argc, char **argv)
         return;
     }
 
-    solar_os_shell_io_writeln(term, "usage: ble [status|scan|pair|forget|gatt]");
+    solar_os_shell_io_writeln(term, "usage: ble [status|scan|pair|cancel|forget|gatt]");
 }
 
 static void wifi_print_usage(solar_os_shell_io_t *term)

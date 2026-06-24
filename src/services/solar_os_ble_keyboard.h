@@ -9,7 +9,7 @@
 
 #define SOLAR_OS_BLE_KEYBOARD_NAME_MAX 64
 #define SOLAR_OS_BLE_KEYBOARD_SCAN_MAX_RESULTS 32
-#define SOLAR_OS_BLE_KEYBOARD_MAX_REMEMBERED 3
+#define SOLAR_OS_BLE_KEYBOARD_MAX_REMEMBERED 1
 #define SOLAR_OS_BLE_KEYBOARD_REPEAT_RATE_MIN 1U
 #define SOLAR_OS_BLE_KEYBOARD_REPEAT_RATE_MAX 60U
 #define SOLAR_OS_BLE_KEYBOARD_REPEAT_DELAY_MIN_MS 100U
@@ -61,6 +61,7 @@ typedef struct {
 
 esp_err_t solar_os_ble_keyboard_init(void);
 esp_err_t solar_os_ble_keyboard_start_pairing(void);
+esp_err_t solar_os_ble_keyboard_cancel_pairing(void);
 esp_err_t solar_os_ble_keyboard_scan(solar_os_ble_keyboard_scan_result_t *results,
                                      size_t max_results,
                                      size_t *found);
@@ -69,6 +70,7 @@ esp_err_t solar_os_ble_keyboard_prepare_sleep(uint32_t timeout_ms);
 void solar_os_ble_keyboard_resume(void);
 bool solar_os_ble_keyboard_is_connected(void);
 bool solar_os_ble_keyboard_is_scanning(void);
+bool solar_os_ble_keyboard_is_pairing(void);
 size_t solar_os_ble_keyboard_remembered_count(void);
 void solar_os_ble_keyboard_get_status(char *buffer, size_t buffer_len);
 size_t solar_os_ble_keyboard_read_chars(char *buffer, size_t buffer_len);

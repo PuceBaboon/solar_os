@@ -445,11 +445,22 @@ static void poll_key_button(void)
     }
 
     key_long_press_fired = true;
-    const esp_err_t err = solar_os_ble_keyboard_start_pairing();
+    const bool cancel_pairing = solar_os_ble_keyboard_is_pairing();
+    const esp_err_t err = cancel_pairing ?
+        solar_os_ble_keyboard_cancel_pairing() :
+        solar_os_ble_keyboard_start_pairing();
+    last_status_update_ms = 0;
+    update_status();
+    draw_terminal_if_needed();
     if (err == ESP_OK) {
-        SOLAR_OS_LOGI(TAG, "KEY long press: BLE keyboard pairing started");
+        SOLAR_OS_LOGI(TAG,
+                      "KEY long press: BLE keyboard pairing %s",
+                      cancel_pairing ? "cancelled" : "started");
     } else {
-        SOLAR_OS_LOGW(TAG, "KEY long press: pairing not started: %s", esp_err_to_name(err));
+        SOLAR_OS_LOGW(TAG,
+                      "KEY long press: pairing %s failed: %s",
+                      cancel_pairing ? "cancel" : "start",
+                      esp_err_to_name(err));
     }
 }
 

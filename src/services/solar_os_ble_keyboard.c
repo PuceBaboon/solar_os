@@ -17,6 +17,7 @@
 #include "esp_hid_common.h"
 #include "esp_hidh.h"
 #include "esp_hidh_gattc.h"
+#include "esp_private/esp_hidh_private.h"
 #include "solar_os_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -33,13 +34,13 @@
 #define BLE_KEYBOARD_RECONNECT_FAST_RETRY_DELAY_MS 250
 #define BLE_KEYBOARD_RECONNECT_FAST_WINDOW_MS 5000
 #define BLE_KEYBOARD_RECONNECT_RETRY_DELAY_MS 1000
-#define BLE_KEYBOARD_RECONNECT_DIRECT_ATTEMPTS_BEFORE_SCAN 1
-#define BLE_KEYBOARD_CONN_MIN_INTERVAL 6U
-#define BLE_KEYBOARD_CONN_MAX_INTERVAL 12U
-#define BLE_KEYBOARD_CONN_LATENCY 0U
-#define BLE_KEYBOARD_CONN_TIMEOUT 400U
+#define BLE_KEYBOARD_PAIR_SWITCH_DISCONNECT_TIMEOUT_MS 1200
+#define BLE_KEYBOARD_RESUME_RECONNECT_DELAY_MS 100
+#define BLE_KEYBOARD_OPEN_TIMEOUT_MS 10000
+#define BLE_KEYBOARD_STALE_CLOSE_TIMEOUT_MS 1500
 #define BLE_KEYBOARD_PEER_MAGIC 0x4b424431U
 #define BLE_KEYBOARD_MAX_REMEMBERED SOLAR_OS_BLE_KEYBOARD_MAX_REMEMBERED
+#define BLE_KEYBOARD_NVS_MIGRATE_MAX_REMEMBERED 3
 #define BLE_KEYBOARD_NVS_NAMESPACE "blekbd"
 #define BLE_KEYBOARD_NVS_PEERS_KEY "peers"
 #define BLE_KEYBOARD_NVS_LEGACY_PEER_KEY "peer"
@@ -72,8 +73,14 @@ typedef enum {
     BLE_KEYBOARD_CONNECTING,
     BLE_KEYBOARD_CONNECTED,
     BLE_KEYBOARD_PASSKEY,
+    BLE_KEYBOARD_PAIRING_PENDING,
     BLE_KEYBOARD_FAILED,
 } ble_keyboard_state_t;
+
+typedef enum {
+    BLE_KEYBOARD_SCAN_DISCOVERY,
+    BLE_KEYBOARD_SCAN_PAIRING,
+} ble_keyboard_scan_mode_t;
 
 typedef struct {
     bool valid;
@@ -140,11 +147,16 @@ static portMUX_TYPE repeat_lock = portMUX_INITIALIZER_UNLOCKED;
 static bool initialized;
 static bool connected;
 static bool reconnect_suppressed_for_sleep;
-static bool scan_remembered_only;
+static bool reconnect_suppressed_for_pairing;
+static bool pairing_retry_pending;
+static bool pairing_cancel_requested;
+static ble_keyboard_scan_mode_t active_scan_mode = BLE_KEYBOARD_SCAN_DISCOVERY;
 static bool caps_lock;
 static uint8_t previous_keys[BLE_KEYBOARD_MAX_KEYS];
 static uint8_t previous_modifiers;
 static esp_hidh_dev_t *connected_dev;
+static esp_hidh_dev_t *pending_dev;
+static TickType_t pending_open_started_tick;
 static ble_keyboard_state_t state = BLE_KEYBOARD_IDLE;
 static ble_keyboard_candidate_t candidate;
 static solar_os_ble_keyboard_scan_result_t *active_scan_results;
@@ -187,8 +199,12 @@ static void set_status(ble_keyboard_state_t next_state, const char *fmt, ...)
 static void repeat_clear(void);
 static void schedule_reconnect(uint32_t delay_ms);
 static void repeat_queue_if_due(void);
-static void restore_status_after_scan(bool remembered_only);
-static esp_err_t run_keyboard_scan(bool remembered_only);
+static bool hidh_link_ready(esp_hidh_dev_t *dev, esp_gap_conn_params_t *params);
+static bool drop_existing_hidh_device(const uint8_t *bda, const char *reason, uint32_t timeout_ms);
+static void restore_status_after_scan(ble_keyboard_scan_mode_t mode);
+static esp_err_t run_keyboard_scan(ble_keyboard_scan_mode_t mode);
+static esp_err_t start_pairing_scan_now(void);
+static void request_pairing_after_pending_connect(const char *reason);
 static void ble_gattc_callback(esp_gattc_cb_event_t event,
                                esp_gatt_if_t gattc_if,
                                esp_ble_gattc_cb_param_t *param);
@@ -207,56 +223,12 @@ static void log_conn_params(const char *prefix, const esp_gap_conn_params_t *par
              (unsigned)params->timeout * 10U);
 }
 
-static void request_low_latency_conn_params(const uint8_t *bda, const char *phase)
-{
-    if (bda == NULL) {
-        return;
-    }
-
-    esp_ble_conn_update_params_t params = {
-        .min_int = BLE_KEYBOARD_CONN_MIN_INTERVAL,
-        .max_int = BLE_KEYBOARD_CONN_MAX_INTERVAL,
-        .latency = BLE_KEYBOARD_CONN_LATENCY,
-        .timeout = BLE_KEYBOARD_CONN_TIMEOUT,
-    };
-    memcpy(params.bda, bda, sizeof(params.bda));
-
-    const esp_err_t ret = esp_ble_gap_update_conn_params(&params);
-    if (ret != ESP_OK) {
-        SOLAR_OS_LOGW(TAG,
-                 "%s: BLE conn param update failed: %s",
-                 phase != NULL ? phase : "ble",
-                 esp_err_to_name(ret));
-    } else {
-        SOLAR_OS_LOGI(TAG,
-                 "%s: requested BLE conn interval 7.5-15 ms latency 0",
-                 phase != NULL ? phase : "ble");
-    }
-}
-
-static void set_preferred_low_latency_conn_params(const uint8_t *bda)
-{
-    if (bda == NULL) {
-        return;
-    }
-
-    esp_bd_addr_t addr;
-    memcpy(addr, bda, sizeof(addr));
-
-    const esp_err_t ret = esp_ble_gap_set_prefer_conn_params(addr,
-                                                             BLE_KEYBOARD_CONN_MIN_INTERVAL,
-                                                             BLE_KEYBOARD_CONN_MAX_INTERVAL,
-                                                             BLE_KEYBOARD_CONN_LATENCY,
-                                                             BLE_KEYBOARD_CONN_TIMEOUT);
-    if (ret != ESP_OK) {
-        SOLAR_OS_LOGW(TAG, "preferred BLE conn params failed: %s", esp_err_to_name(ret));
-    }
-}
-
 static void clear_runtime_connection_state(const char *reason)
 {
     connected = false;
     connected_dev = NULL;
+    pending_dev = NULL;
+    pending_open_started_tick = 0;
     memset(previous_keys, 0, sizeof(previous_keys));
     previous_modifiers = 0;
     repeat_clear();
@@ -285,6 +257,13 @@ static void start_fast_reconnect_window(const char *reason)
              (unsigned)BLE_KEYBOARD_RECONNECT_FAST_WINDOW_MS);
 }
 
+static bool reconnect_is_suppressed(void)
+{
+    return reconnect_suppressed_for_sleep ||
+        reconnect_suppressed_for_pairing ||
+        pairing_retry_pending;
+}
+
 static void set_status(ble_keyboard_state_t next_state, const char *fmt, ...)
 {
     char buffer[sizeof(status_text)];
@@ -304,6 +283,26 @@ static void set_status(ble_keyboard_state_t next_state, const char *fmt, ...)
     if (status_mutex != NULL) {
         xSemaphoreGive(status_mutex);
     }
+}
+
+static void stop_reconnect_task(const char *reason)
+{
+    if (reconnect_task_handle == NULL) {
+        return;
+    }
+
+    if (state == BLE_KEYBOARD_SCANNING) {
+        SOLAR_OS_LOGI(TAG,
+                      "%s: stopping reconnect scan",
+                      reason != NULL ? reason : "ble");
+        (void)esp_ble_gap_stop_scanning();
+        active_scan_mode = BLE_KEYBOARD_SCAN_DISCOVERY;
+        set_status(BLE_KEYBOARD_IDLE, "%s", reason != NULL ? reason : "idle");
+    }
+
+    TaskHandle_t task = reconnect_task_handle;
+    reconnect_task_handle = NULL;
+    vTaskDelete(task);
 }
 
 static void gatt_lock(void)
@@ -506,20 +505,6 @@ static const ble_keyboard_peer_t *remembered_peer_for_bda(const uint8_t *bda)
     return index >= 0 ? &remembered_peers[index] : NULL;
 }
 
-static void compact_remembered_peers(void)
-{
-    ble_keyboard_peer_t compact[BLE_KEYBOARD_MAX_REMEMBERED] = {0};
-    size_t out = 0;
-
-    for (size_t i = 0; i < BLE_KEYBOARD_MAX_REMEMBERED; i++) {
-        if (remembered_peer_valid_at(i) && out < BLE_KEYBOARD_MAX_REMEMBERED) {
-            compact[out++] = remembered_peers[i];
-        }
-    }
-
-    memcpy(remembered_peers, compact, sizeof(remembered_peers));
-}
-
 static bool bda_matches_remembered_peer(const uint8_t *bda)
 {
     return remembered_peer_index_by_bda(bda) >= 0;
@@ -684,8 +669,7 @@ static void log_remembered_peers(void)
         }
 
         SOLAR_OS_LOGI(TAG,
-                 "remembered keyboard %u " ESP_BD_ADDR_STR " addr_type=%s name=%s",
-                 (unsigned)i,
+                 "remembered keyboard " ESP_BD_ADDR_STR " addr_type=%s name=%s",
                  ESP_BD_ADDR_HEX(remembered_peers[i].bda),
                  addr_type_name((esp_ble_addr_type_t)remembered_peers[i].addr_type),
                  remembered_peers[i].name[0] ? remembered_peers[i].name : "(unnamed)");
@@ -705,8 +689,9 @@ static esp_err_t load_remembered_peers(void)
     }
 
     memset(remembered_peers, 0, sizeof(remembered_peers));
-    size_t len = sizeof(remembered_peers);
-    ret = nvs_get_blob(nvs, BLE_KEYBOARD_NVS_PEERS_KEY, remembered_peers, &len);
+    ble_keyboard_peer_t loaded_peers[BLE_KEYBOARD_NVS_MIGRATE_MAX_REMEMBERED] = {0};
+    size_t len = sizeof(loaded_peers);
+    ret = nvs_get_blob(nvs, BLE_KEYBOARD_NVS_PEERS_KEY, loaded_peers, &len);
     if (ret == ESP_ERR_NVS_NOT_FOUND) {
         ble_keyboard_peer_t legacy_peer = {0};
         len = sizeof(legacy_peer);
@@ -731,13 +716,25 @@ static esp_err_t load_remembered_peers(void)
         memset(remembered_peers, 0, sizeof(remembered_peers));
         return ret;
     }
-    if (len != sizeof(remembered_peers)) {
+    if (len < sizeof(ble_keyboard_peer_t) ||
+        (len % sizeof(ble_keyboard_peer_t)) != 0 ||
+        len > sizeof(loaded_peers)) {
         memset(remembered_peers, 0, sizeof(remembered_peers));
         return ESP_ERR_INVALID_SIZE;
     }
 
-    compact_remembered_peers();
+    const size_t loaded_count = len / sizeof(ble_keyboard_peer_t);
+    for (size_t i = 0; i < loaded_count; i++) {
+        if (loaded_peers[i].magic == BLE_KEYBOARD_PEER_MAGIC) {
+            remembered_peers[0] = loaded_peers[i];
+            break;
+        }
+    }
     log_remembered_peers();
+    if (len != sizeof(remembered_peers)) {
+        SOLAR_OS_LOGI(TAG, "migrating BLE keyboard peers to single remembered keyboard");
+        (void)save_remembered_peers_to_nvs();
+    }
     return ESP_OK;
 }
 
@@ -754,22 +751,13 @@ static esp_err_t save_remembered_peer(const uint8_t *bda, esp_ble_addr_type_t ad
     memcpy(peer.bda, bda, sizeof(peer.bda));
     strlcpy(peer.name, name != NULL && name[0] ? name : "keyboard", sizeof(peer.name));
 
-    const int existing_index = remembered_peer_index_by_bda(bda);
-    if (existing_index > 0) {
-        for (int i = existing_index; i > 0; i--) {
-            remembered_peers[i] = remembered_peers[i - 1];
-        }
-    } else if (existing_index < 0) {
-        for (size_t i = BLE_KEYBOARD_MAX_REMEMBERED - 1; i > 0; i--) {
-            remembered_peers[i] = remembered_peers[i - 1];
-        }
-    }
+    memset(remembered_peers, 0, sizeof(remembered_peers));
     remembered_peers[0] = peer;
 
     const esp_err_t ret = save_remembered_peers_to_nvs();
     if (ret == ESP_OK) {
         SOLAR_OS_LOGI(TAG,
-                 "remembered keyboard 0 " ESP_BD_ADDR_STR " addr_type=%s name=%s",
+                 "remembered keyboard " ESP_BD_ADDR_STR " addr_type=%s name=%s",
                  ESP_BD_ADDR_HEX(peer.bda),
                  addr_type_name((esp_ble_addr_type_t)peer.addr_type),
                  peer.name);
@@ -808,6 +796,99 @@ static esp_err_t clear_remembered_peers(void)
     return ret;
 }
 
+static bool hidh_link_ready(esp_hidh_dev_t *dev, esp_gap_conn_params_t *params)
+{
+    if (dev == NULL || !esp_hidh_dev_exists(dev)) {
+        return false;
+    }
+
+    const uint8_t *bda = esp_hidh_dev_bda_get(dev);
+    if (bda == NULL) {
+        return false;
+    }
+
+    esp_gap_conn_params_t local_params = {0};
+    esp_gap_conn_params_t *out_params = params != NULL ? params : &local_params;
+    const esp_err_t ret = esp_ble_get_current_conn_params((uint8_t *)bda, out_params);
+    if (ret != ESP_OK) {
+        SOLAR_OS_LOGW(TAG,
+                      "HID keyboard link has no BLE conn params: %s",
+                      esp_err_to_name(ret));
+        return false;
+    }
+
+    if (out_params->interval == 0 || out_params->timeout == 0) {
+        SOLAR_OS_LOGW(TAG,
+                      "HID keyboard link has invalid BLE conn params interval=%u timeout=%u",
+                      (unsigned)out_params->interval,
+                      (unsigned)out_params->timeout);
+        return false;
+    }
+
+    return true;
+}
+
+static bool drop_existing_hidh_device(const uint8_t *bda, const char *reason, uint32_t timeout_ms)
+{
+    if (bda == NULL) {
+        return true;
+    }
+
+    esp_bd_addr_t lookup_bda;
+    memcpy(lookup_bda, bda, sizeof(lookup_bda));
+    esp_hidh_dev_t *dev = esp_hidh_dev_get_by_bda(lookup_bda);
+    if (dev == NULL) {
+        return true;
+    }
+
+    SOLAR_OS_LOGW(TAG,
+                  "%s: dropping HIDH keyboard " ESP_BD_ADDR_STR
+                  " connected=%u status=0x%x conn_id=%d reports=%u",
+                  reason != NULL ? reason : "ble",
+                  ESP_BD_ADDR_HEX(bda),
+                  dev->connected ? 1U : 0U,
+                  (unsigned)dev->status,
+                  dev->ble.conn_id,
+                  (unsigned)dev->reports_len);
+
+    if (connected_dev == dev) {
+        connected = false;
+        connected_dev = NULL;
+    }
+    if (pending_dev == dev) {
+        pending_dev = NULL;
+        pending_open_started_tick = 0;
+    }
+
+    if (dev->close == NULL || dev->ble.conn_id < 0) {
+        (void)esp_hidh_dev_free_inner(dev);
+        return true;
+    }
+
+    while (close_done_sem != NULL && xSemaphoreTake(close_done_sem, 0) == pdTRUE) {
+    }
+
+    const esp_err_t close_ret = esp_hidh_dev_close(dev);
+    if (close_ret != ESP_OK) {
+        SOLAR_OS_LOGW(TAG,
+                      "%s: stale HIDH close failed: %s",
+                      reason != NULL ? reason : "ble",
+                      esp_err_to_name(close_ret));
+        return false;
+    }
+
+    if (timeout_ms > 0 &&
+        close_done_sem != NULL &&
+        xSemaphoreTake(close_done_sem, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {
+        SOLAR_OS_LOGW(TAG,
+                      "%s: stale HIDH close timeout",
+                      reason != NULL ? reason : "ble");
+        return false;
+    }
+
+    return true;
+}
+
 static esp_err_t open_keyboard(const uint8_t *bda,
                                esp_ble_addr_type_t addr_type,
                                const char *name,
@@ -818,15 +899,76 @@ static esp_err_t open_keyboard(const uint8_t *bda,
     strlcpy(pending_name, name != NULL && name[0] ? name : "keyboard", sizeof(pending_name));
     set_status(BLE_KEYBOARD_CONNECTING, "%s %s", status_action, pending_name);
 
-    set_preferred_low_latency_conn_params(bda);
+    if (!drop_existing_hidh_device(bda, status_action, BLE_KEYBOARD_STALE_CLOSE_TIMEOUT_MS)) {
+        set_status(BLE_KEYBOARD_FAILED, "hid busy");
+        return ESP_ERR_INVALID_STATE;
+    }
 
-    if (esp_hidh_dev_open(pending_bda, ESP_HID_TRANSPORT_BLE, pending_addr_type) == NULL) {
+    pending_open_started_tick = xTaskGetTickCount();
+    esp_hidh_dev_t *opened_dev = esp_hidh_dev_open(pending_bda, ESP_HID_TRANSPORT_BLE, pending_addr_type);
+    if (opened_dev == NULL) {
+        pending_open_started_tick = 0;
         SOLAR_OS_LOGE(TAG, "esp_hidh_dev_open failed");
         set_status(BLE_KEYBOARD_FAILED, "connect failed");
         return ESP_FAIL;
     }
+    if (connected && connected_dev == opened_dev) {
+        pending_dev = NULL;
+        pending_open_started_tick = 0;
+    } else {
+        pending_dev = opened_dev;
+    }
 
     return ESP_OK;
+}
+
+static bool close_pending_open_attempt(const char *reason, uint32_t timeout_ms)
+{
+    if (pending_dev == NULL) {
+        return true;
+    }
+    if (connected && pending_dev == connected_dev) {
+        pending_dev = NULL;
+        pending_open_started_tick = 0;
+        return true;
+    }
+
+    while (close_done_sem != NULL && xSemaphoreTake(close_done_sem, 0) == pdTRUE) {
+    }
+
+    SOLAR_OS_LOGI(TAG, "%s: closing pending keyboard open", reason != NULL ? reason : "ble");
+    esp_hidh_dev_t *dev = pending_dev;
+    pending_dev = NULL;
+    pending_open_started_tick = 0;
+    esp_err_t err = ESP_FAIL;
+    if (esp_hidh_dev_exists(dev)) {
+        err = esp_hidh_dev_close(dev);
+    }
+    if (err != ESP_OK) {
+        SOLAR_OS_LOGW(TAG,
+                      "%s: pending keyboard close failed: %s",
+                      reason != NULL ? reason : "ble",
+                      esp_err_to_name(err));
+        if (!connected) {
+            clear_runtime_connection_state(reason);
+        }
+        return false;
+    }
+
+    if (timeout_ms > 0 &&
+        close_done_sem != NULL &&
+        xSemaphoreTake(close_done_sem, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {
+        SOLAR_OS_LOGW(TAG, "%s: pending keyboard close timeout", reason != NULL ? reason : "ble");
+        if (!connected) {
+            clear_runtime_connection_state(reason);
+        }
+        return false;
+    }
+
+    if (!connected && state == BLE_KEYBOARD_CONNECTING) {
+        set_status(BLE_KEYBOARD_IDLE, "%s", reason != NULL ? reason : "idle");
+    }
+    return true;
 }
 
 void solar_os_ble_keyboard_get_status(char *buffer, size_t buffer_len)
@@ -859,13 +1001,32 @@ bool solar_os_ble_keyboard_is_scanning(void)
         xSemaphoreTake(status_mutex, portMAX_DELAY);
     }
 
-    scanning = state == BLE_KEYBOARD_SCANNING;
+    scanning = state == BLE_KEYBOARD_SCANNING || state == BLE_KEYBOARD_PAIRING_PENDING;
 
     if (status_mutex != NULL) {
         xSemaphoreGive(status_mutex);
     }
 
     return scanning;
+}
+
+bool solar_os_ble_keyboard_is_pairing(void)
+{
+    bool pairing;
+
+    if (status_mutex != NULL) {
+        xSemaphoreTake(status_mutex, portMAX_DELAY);
+    }
+
+    pairing = pairing_retry_pending ||
+        state == BLE_KEYBOARD_PAIRING_PENDING ||
+        (state == BLE_KEYBOARD_SCANNING && active_scan_mode == BLE_KEYBOARD_SCAN_PAIRING);
+
+    if (status_mutex != NULL) {
+        xSemaphoreGive(status_mutex);
+    }
+
+    return pairing;
 }
 
 size_t solar_os_ble_keyboard_remembered_count(void)
@@ -1188,7 +1349,7 @@ static void consider_candidate(const esp_ble_gap_cb_param_t *param)
     adv_name(adv_data, adv_len, name, sizeof(name));
 
     const bool keyboard_like = is_keyboard_like(appearance, name);
-    if (!scan_remembered_only) {
+    if (active_scan_mode == BLE_KEYBOARD_SCAN_DISCOVERY) {
         collect_scan_result(param->scan_rst.bda,
                             param->scan_rst.ble_addr_type,
                             param->scan_rst.rssi,
@@ -1202,26 +1363,14 @@ static void consider_candidate(const esp_ble_gap_cb_param_t *param)
         return;
     }
 
-    if (scan_remembered_only &&
-        !bda_matches_remembered_peer(param->scan_rst.bda) &&
-        !name_matches_remembered_peer(name)) {
-        return;
-    }
-
-    if (scan_remembered_only) {
-        collect_scan_result(param->scan_rst.bda,
-                            param->scan_rst.ble_addr_type,
-                            param->scan_rst.rssi,
-                            appearance,
-                            has_hid_service,
-                            keyboard_like,
-                            name);
-    }
-
-    if (candidate.valid &&
-        (!keyboard_like || candidate.keyboard_like) &&
-        param->scan_rst.rssi <= candidate.rssi) {
-        return;
+    if (candidate.valid) {
+        if (candidate.keyboard_like && !keyboard_like) {
+            return;
+        }
+        if (candidate.keyboard_like == keyboard_like &&
+            param->scan_rst.rssi <= candidate.rssi) {
+            return;
+        }
     }
 
     candidate.valid = true;
@@ -1867,7 +2016,6 @@ static void gap_callback(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *p
     case ESP_GAP_BLE_AUTH_CMPL_EVT:
         if (param->ble_security.auth_cmpl.success) {
             SOLAR_OS_LOGI(TAG, "auth success");
-            request_low_latency_conn_params(param->ble_security.auth_cmpl.bd_addr, "auth");
         } else {
             SOLAR_OS_LOGE(TAG, "auth failed: 0x%x", param->ble_security.auth_cmpl.fail_reason);
             set_status(BLE_KEYBOARD_FAILED, "auth failed 0x%x", param->ble_security.auth_cmpl.fail_reason);
@@ -1907,7 +2055,7 @@ static bool gatt_event_is_for_solaros(esp_gattc_cb_event_t event,
         return param != NULL && param->reg.app_id == BLE_GATT_APP_ID;
     }
     return gatt_state.gattc_if != ESP_GATT_IF_NONE &&
-        (gattc_if == gatt_state.gattc_if || gattc_if == ESP_GATT_IF_NONE);
+        gattc_if == gatt_state.gattc_if;
 }
 
 static void gatt_handle_disconnect(uint16_t conn_id, const uint8_t *bda, uint8_t reason)
@@ -1957,10 +2105,6 @@ static void solaros_gattc_event_handler(esp_gattc_cb_event_t event,
         if (gatt_op_sem != NULL) {
             xSemaphoreGive(gatt_op_sem);
         }
-        break;
-
-    case ESP_GATTC_CONNECT_EVT:
-        request_low_latency_conn_params(param->connect.remote_bda, "gatt connect");
         break;
 
     case ESP_GATTC_OPEN_EVT:
@@ -2109,41 +2253,78 @@ static void hidh_callback(void *handler_args, esp_event_base_t base, int32_t id,
 
     switch ((esp_hidh_event_t)id) {
     case ESP_HIDH_OPEN_EVENT:
+        if (pending_dev == param->open.dev) {
+            pending_dev = NULL;
+        }
+        pending_open_started_tick = 0;
         if (param->open.status == ESP_OK) {
+            const uint8_t *bda = esp_hidh_dev_bda_get(param->open.dev);
+            esp_gap_conn_params_t params = {0};
+            if (bda == NULL || !hidh_link_ready(param->open.dev, &params)) {
+                connected = false;
+                connected_dev = NULL;
+                pending_dev = NULL;
+                memset(previous_keys, 0, sizeof(previous_keys));
+                previous_modifiers = 0;
+                repeat_clear();
+                SOLAR_OS_LOGW(TAG, "open rejected: HID keyboard link is not usable");
+                set_status(BLE_KEYBOARD_FAILED, "bad keyboard link");
+                const esp_err_t close_ret = esp_hidh_dev_close(param->open.dev);
+                if (close_ret != ESP_OK) {
+                    SOLAR_OS_LOGW(TAG,
+                                  "bad keyboard link close failed: %s",
+                                  esp_err_to_name(close_ret));
+                    if (!reconnect_is_suppressed()) {
+                        schedule_reconnect(BLE_KEYBOARD_RECONNECT_RETRY_DELAY_MS);
+                    }
+                }
+                break;
+            }
+
             connected = true;
             connected_dev = param->open.dev;
             memset(previous_keys, 0, sizeof(previous_keys));
             previous_modifiers = 0;
             repeat_clear();
-            const uint8_t *bda = esp_hidh_dev_bda_get(param->open.dev);
             const char *name = esp_hidh_dev_name_get(param->open.dev);
             const char *display_name = name != NULL && name[0] ? name : pending_name;
             strlcpy(connected_name, display_name[0] ? display_name : "keyboard", sizeof(connected_name));
-            if (bda != NULL) {
-                SOLAR_OS_LOGI(TAG, ESP_BD_ADDR_STR " open: %s",
-                         ESP_BD_ADDR_HEX(bda),
-                         connected_name);
-                esp_gap_conn_params_t params = {0};
-                if (esp_ble_get_current_conn_params((uint8_t *)bda, &params) == ESP_OK) {
-                    log_conn_params("open", &params);
-                }
-                request_low_latency_conn_params(bda, "open");
-                save_remembered_peer(bda, pending_addr_type, connected_name);
-            } else {
-                SOLAR_OS_LOGI(TAG, "open: %s", connected_name);
-                request_low_latency_conn_params(pending_bda, "open");
-                save_remembered_peer(pending_bda, pending_addr_type, connected_name);
-            }
+            SOLAR_OS_LOGI(TAG, ESP_BD_ADDR_STR " open: %s",
+                     ESP_BD_ADDR_HEX(bda),
+                     connected_name);
+            log_conn_params("open", &params);
+            save_remembered_peer(bda, pending_addr_type, connected_name);
             esp_hidh_dev_dump(param->open.dev, stdout);
             set_status(BLE_KEYBOARD_CONNECTED, "connected %s", connected_name);
+            if (pairing_retry_pending) {
+                esp_err_t pair_ret = start_pairing_scan_now();
+                if (pair_ret != ESP_OK) {
+                    SOLAR_OS_LOGW(TAG,
+                                  "deferred pairing start failed after open: %s",
+                                  esp_err_to_name(pair_ret));
+                }
+            }
         } else {
             connected = false;
             connected_dev = NULL;
+            pending_dev = NULL;
             memset(previous_keys, 0, sizeof(previous_keys));
             previous_modifiers = 0;
             SOLAR_OS_LOGE(TAG, "open failed: %s", esp_err_to_name(param->open.status));
+            if (pairing_retry_pending) {
+                esp_err_t pair_ret = start_pairing_scan_now();
+                if (pair_ret != ESP_OK) {
+                    SOLAR_OS_LOGW(TAG,
+                                  "deferred pairing start failed after open failure: %s",
+                                  esp_err_to_name(pair_ret));
+                    set_status(BLE_KEYBOARD_FAILED, "open failed");
+                }
+                break;
+            }
             set_status(BLE_KEYBOARD_FAILED, "open failed");
-            schedule_reconnect(BLE_KEYBOARD_RECONNECT_RETRY_DELAY_MS);
+            if (!reconnect_is_suppressed()) {
+                schedule_reconnect(BLE_KEYBOARD_RECONNECT_RETRY_DELAY_MS);
+            }
         }
         break;
 
@@ -2169,8 +2350,14 @@ static void hidh_callback(void *handler_args, esp_event_base_t base, int32_t id,
         break;
 
     case ESP_HIDH_CLOSE_EVENT:
+        pending_open_started_tick = 0;
         connected = false;
-        connected_dev = NULL;
+        if (connected_dev == param->close.dev) {
+            connected_dev = NULL;
+        }
+        if (pending_dev == param->close.dev) {
+            pending_dev = NULL;
+        }
         memset(previous_keys, 0, sizeof(previous_keys));
         previous_modifiers = 0;
         repeat_clear();
@@ -2182,7 +2369,14 @@ static void hidh_callback(void *handler_args, esp_event_base_t base, int32_t id,
         if (close_done_sem != NULL) {
             xSemaphoreGive(close_done_sem);
         }
-        if (!reconnect_suppressed_for_sleep) {
+        if (pairing_retry_pending) {
+            esp_err_t pair_ret = start_pairing_scan_now();
+            if (pair_ret != ESP_OK) {
+                SOLAR_OS_LOGW(TAG,
+                              "deferred pairing start failed after close: %s",
+                              esp_err_to_name(pair_ret));
+            }
+        } else if (!reconnect_is_suppressed()) {
             schedule_reconnect(BLE_KEYBOARD_RECONNECT_INITIAL_DELAY_MS);
         }
         break;
@@ -2284,6 +2478,10 @@ esp_err_t solar_os_ble_keyboard_init(void)
     esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
     ESP_RETURN_ON_ERROR(esp_bt_controller_init(&bt_cfg), TAG, "controller init failed");
     ESP_RETURN_ON_ERROR(esp_bt_controller_enable(ESP_BT_MODE_BLE), TAG, "controller enable failed");
+    ret = esp_bt_sleep_disable();
+    if (ret != ESP_OK && ret != ESP_ERR_NOT_SUPPORTED && ret != ESP_ERR_INVALID_STATE) {
+        SOLAR_OS_LOGW(TAG, "BLE controller sleep disable failed: %s", esp_err_to_name(ret));
+    }
 
     esp_bluedroid_config_t bluedroid_cfg = BT_BLUEDROID_INIT_CONFIG_DEFAULT();
     bluedroid_cfg.ssp_en = false;
@@ -2350,13 +2548,13 @@ esp_err_t solar_os_ble_keyboard_scan(solar_os_ble_keyboard_scan_result_t *result
     active_scan_result_count = 0;
     collect_connected_scan_result();
 
-    const esp_err_t ret = run_keyboard_scan(false);
+    const esp_err_t ret = run_keyboard_scan(BLE_KEYBOARD_SCAN_DISCOVERY);
 
     *found = active_scan_result_count;
     active_scan_results = NULL;
     active_scan_max_results = 0;
     active_scan_result_count = 0;
-    scan_remembered_only = false;
+    active_scan_mode = BLE_KEYBOARD_SCAN_DISCOVERY;
 
     if (ret == ESP_ERR_NOT_FOUND && *found > 0) {
         return ESP_OK;
@@ -2364,7 +2562,7 @@ esp_err_t solar_os_ble_keyboard_scan(solar_os_ble_keyboard_scan_result_t *result
     if (ret == ESP_OK && !connected) {
         set_status(BLE_KEYBOARD_IDLE, "scan done");
     } else if (ret == ESP_OK) {
-        restore_status_after_scan(false);
+        restore_status_after_scan(BLE_KEYBOARD_SCAN_DISCOVERY);
     }
     return ret;
 }
@@ -2673,42 +2871,65 @@ esp_err_t solar_os_ble_gatt_write(uint16_t handle,
                                timeout_ms != 0 ? timeout_ms : BLE_GATT_OPERATION_TIMEOUT_MS);
 }
 
-static void restore_status_after_scan(bool remembered_only)
+static const char *scan_mode_status(ble_keyboard_scan_mode_t mode)
+{
+    switch (mode) {
+    case BLE_KEYBOARD_SCAN_PAIRING:
+        return "pairing";
+    case BLE_KEYBOARD_SCAN_DISCOVERY:
+    default:
+        return "scanning";
+    }
+}
+
+static const char *scan_mode_log_name(ble_keyboard_scan_mode_t mode)
+{
+    switch (mode) {
+    case BLE_KEYBOARD_SCAN_PAIRING:
+        return "new keyboard pairing";
+    case BLE_KEYBOARD_SCAN_DISCOVERY:
+    default:
+        return "BLE discovery";
+    }
+}
+
+static void restore_status_after_scan(ble_keyboard_scan_mode_t mode)
 {
     if (connected) {
         set_status(BLE_KEYBOARD_CONNECTED,
                    "connected %s",
                    connected_name[0] ? connected_name : "keyboard");
     } else {
-        set_status(BLE_KEYBOARD_IDLE,
-                   remembered_only ? "remembered keyboard not found" : "no keyboard found");
+        const char *message = "no keyboard found";
+        if (mode == BLE_KEYBOARD_SCAN_PAIRING) {
+            message = "no new keyboard found";
+        }
+        set_status(BLE_KEYBOARD_IDLE, "%s", message);
     }
 }
 
-static esp_err_t run_keyboard_scan(bool remembered_only)
+static esp_err_t run_keyboard_scan(ble_keyboard_scan_mode_t mode)
 {
     while (xSemaphoreTake(scan_done_sem, 0) == pdTRUE) {
     }
 
     memset(&candidate, 0, sizeof(candidate));
-    scan_remembered_only = remembered_only;
-    set_status(BLE_KEYBOARD_SCANNING, remembered_only ? "reconnect scanning" : "scanning");
-    SOLAR_OS_LOGI(TAG,
-                  "%s scan start",
-                  remembered_only ? "remembered keyboard" : "keyboard");
+    active_scan_mode = mode;
+    set_status(BLE_KEYBOARD_SCANNING, "%s", scan_mode_status(mode));
+    SOLAR_OS_LOGI(TAG, "%s scan start", scan_mode_log_name(mode));
 
     esp_err_t ret = esp_ble_gap_set_scan_params(&scan_params);
     if (ret != ESP_OK) {
         SOLAR_OS_LOGE(TAG, "set scan params failed: %s", esp_err_to_name(ret));
         set_status(BLE_KEYBOARD_FAILED, "scan setup failed");
-        scan_remembered_only = false;
+        active_scan_mode = BLE_KEYBOARD_SCAN_DISCOVERY;
         return ret;
     }
 
     if (xSemaphoreTake(scan_done_sem, pdMS_TO_TICKS(1000)) != pdTRUE) {
         SOLAR_OS_LOGE(TAG, "scan params timeout");
         set_status(BLE_KEYBOARD_FAILED, "scan setup timeout");
-        scan_remembered_only = false;
+        active_scan_mode = BLE_KEYBOARD_SCAN_DISCOVERY;
         return ESP_ERR_TIMEOUT;
     }
 
@@ -2716,7 +2937,7 @@ static esp_err_t run_keyboard_scan(bool remembered_only)
     if (ret != ESP_OK) {
         SOLAR_OS_LOGE(TAG, "scan start failed: %s", esp_err_to_name(ret));
         set_status(BLE_KEYBOARD_FAILED, "scan start failed");
-        scan_remembered_only = false;
+        active_scan_mode = BLE_KEYBOARD_SCAN_DISCOVERY;
         return ret;
     }
 
@@ -2724,27 +2945,56 @@ static esp_err_t run_keyboard_scan(bool remembered_only)
         SOLAR_OS_LOGE(TAG, "scan timeout");
         esp_ble_gap_stop_scanning();
         set_status(BLE_KEYBOARD_FAILED, "scan timeout");
-        scan_remembered_only = false;
+        active_scan_mode = BLE_KEYBOARD_SCAN_DISCOVERY;
         return ESP_ERR_TIMEOUT;
     }
-    scan_remembered_only = false;
+    active_scan_mode = BLE_KEYBOARD_SCAN_DISCOVERY;
 
     if (!candidate.valid) {
         SOLAR_OS_LOGW(TAG,
-                      "%s BLE HID keyboard candidate found",
-                      remembered_only ? "no remembered" : "no");
-        restore_status_after_scan(remembered_only);
+                      "%s candidate not found",
+                      scan_mode_log_name(mode));
+        restore_status_after_scan(mode);
         return ESP_ERR_NOT_FOUND;
     }
 
     return ESP_OK;
 }
 
-static esp_err_t scan_and_open_keyboard(bool remembered_only)
+static esp_err_t close_connected_keyboard_for_pairing(void)
 {
-    esp_err_t ret = run_keyboard_scan(remembered_only);
+    if (!connected || connected_dev == NULL) {
+        return ESP_OK;
+    }
+
+    while (close_done_sem != NULL && xSemaphoreTake(close_done_sem, 0) == pdTRUE) {
+    }
+
+    SOLAR_OS_LOGI(TAG, "pairing: closing connected keyboard before switch");
+    reconnect_suppressed_for_pairing = true;
+    esp_hidh_dev_close(connected_dev);
+
+    esp_err_t ret = ESP_OK;
+    if (close_done_sem != NULL &&
+        xSemaphoreTake(close_done_sem,
+                       pdMS_TO_TICKS(BLE_KEYBOARD_PAIR_SWITCH_DISCONNECT_TIMEOUT_MS)) != pdTRUE) {
+        SOLAR_OS_LOGW(TAG, "pairing: keyboard disconnect timeout");
+        clear_runtime_connection_state("pairing disconnect timeout");
+        ret = ESP_ERR_TIMEOUT;
+    }
+
+    reconnect_suppressed_for_pairing = false;
+    return ret;
+}
+
+static esp_err_t scan_and_open_keyboard(ble_keyboard_scan_mode_t mode)
+{
+    esp_err_t ret = run_keyboard_scan(mode);
     if (ret != ESP_OK) {
         return ret;
+    }
+    if (mode == BLE_KEYBOARD_SCAN_PAIRING && pairing_cancel_requested) {
+        return ESP_ERR_INVALID_STATE;
     }
 
     SOLAR_OS_LOGI(TAG,
@@ -2756,58 +3006,118 @@ static esp_err_t scan_and_open_keyboard(bool remembered_only)
                "connecting %s",
                candidate.name[0] ? candidate.name : "keyboard");
 
-    return open_keyboard(candidate.bda, candidate.addr_type, candidate.name, "connecting");
+    if (mode == BLE_KEYBOARD_SCAN_PAIRING) {
+        ret = close_connected_keyboard_for_pairing();
+        if (ret != ESP_OK) {
+            return ret;
+        }
+    }
+
+    return open_keyboard(candidate.bda,
+                         candidate.addr_type,
+                         candidate.name,
+                         mode == BLE_KEYBOARD_SCAN_PAIRING ? "pairing" : "connecting");
 }
 
 static void scan_task(void *arg)
 {
     (void)arg;
 
-    (void)scan_and_open_keyboard(false);
+    const esp_err_t ret = scan_and_open_keyboard(BLE_KEYBOARD_SCAN_PAIRING);
+    if (pairing_cancel_requested) {
+        pairing_cancel_requested = false;
+        if (!connected) {
+            set_status(BLE_KEYBOARD_IDLE, "pairing cancelled");
+        }
+    }
+    if (ret != ESP_OK && !connected) {
+        schedule_reconnect(BLE_KEYBOARD_RECONNECT_INITIAL_DELAY_MS);
+    }
 
     scan_task_handle = NULL;
     vTaskDelete(NULL);
 }
 
+static esp_err_t start_pairing_scan_now(void)
+{
+    pairing_retry_pending = false;
+    reconnect_suppressed_for_pairing = false;
+
+    if (state == BLE_KEYBOARD_CONNECTING && pending_dev == NULL && !connected) {
+        set_status(BLE_KEYBOARD_IDLE, "pairing");
+    }
+
+    if (scan_task_handle != NULL ||
+        state == BLE_KEYBOARD_SCANNING ||
+        state == BLE_KEYBOARD_CONNECTING ||
+        state == BLE_KEYBOARD_PASSKEY) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    set_status(BLE_KEYBOARD_SCANNING, "pairing");
+    if (xTaskCreate(scan_task, "ble_kbd_scan", 6144, NULL, 4, &scan_task_handle) != pdPASS) {
+        scan_task_handle = NULL;
+        set_status(BLE_KEYBOARD_FAILED, "scan task failed");
+        return ESP_ERR_NO_MEM;
+    }
+
+    return ESP_OK;
+}
+
+static void request_pairing_after_pending_connect(const char *reason)
+{
+    pairing_retry_pending = true;
+    reconnect_suppressed_for_pairing = false;
+    set_status(BLE_KEYBOARD_PAIRING_PENDING, "pairing pending");
+    SOLAR_OS_LOGI(TAG,
+                  "%s: pairing waits for pending HID open",
+                  reason != NULL ? reason : "pairing");
+}
+
+static bool pending_open_timed_out(void)
+{
+    return pending_dev != NULL &&
+        pending_open_started_tick != 0 &&
+        (int32_t)(xTaskGetTickCount() -
+                  (pending_open_started_tick + pdMS_TO_TICKS(BLE_KEYBOARD_OPEN_TIMEOUT_MS))) >= 0;
+}
+
 static void reconnect_task(void *arg)
 {
     const uint32_t delay_ms = (uint32_t)(uintptr_t)arg;
-    uint32_t direct_attempts = 0;
 
     if (delay_ms > 0) {
         (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(delay_ms));
     }
 
     while (initialized && remembered_peer_count() > 0 && !connected) {
+        if (pending_open_timed_out()) {
+            SOLAR_OS_LOGW(TAG, "keyboard open timeout, retrying remembered keyboard");
+            (void)close_pending_open_attempt("open timeout", 0);
+            if (!connected && state == BLE_KEYBOARD_CONNECTING) {
+                set_status(BLE_KEYBOARD_FAILED, "open timeout");
+            }
+        }
+
         if (scan_task_handle == NULL &&
             state != BLE_KEYBOARD_SCANNING &&
             state != BLE_KEYBOARD_CONNECTING &&
             state != BLE_KEYBOARD_PASSKEY) {
-            esp_err_t ret;
-            if (direct_attempts < BLE_KEYBOARD_RECONNECT_DIRECT_ATTEMPTS_BEFORE_SCAN) {
-                const ble_keyboard_peer_t *peer = primary_remembered_peer();
-                if (peer == NULL) {
-                    break;
-                }
-                direct_attempts++;
-                SOLAR_OS_LOGI(TAG,
-                         "reconnecting remembered keyboard 0 " ESP_BD_ADDR_STR " addr_type=%s name=%s",
-                         ESP_BD_ADDR_HEX(peer->bda),
-                         addr_type_name((esp_ble_addr_type_t)peer->addr_type),
-                         peer->name[0] ? peer->name : "(unnamed)");
-                ret = open_keyboard(peer->bda,
-                                    (esp_ble_addr_type_t)peer->addr_type,
-                                    peer->name,
-                                    "reconnecting");
-            } else {
-                direct_attempts = 0;
-                SOLAR_OS_LOGI(TAG,
-                              "scanning for %u remembered keyboards",
-                              (unsigned)remembered_peer_count());
-                ret = scan_and_open_keyboard(true);
-            }
-            if (ret == ESP_OK) {
+            const ble_keyboard_peer_t *peer = primary_remembered_peer();
+            if (peer == NULL) {
                 break;
+            }
+            SOLAR_OS_LOGI(TAG,
+                          "reconnecting remembered keyboard " ESP_BD_ADDR_STR " addr_type=%s name=%s",
+                          ESP_BD_ADDR_HEX(peer->bda),
+                          addr_type_name((esp_ble_addr_type_t)peer->addr_type),
+                          peer->name[0] ? peer->name : "(unnamed)");
+            const esp_err_t ret = open_keyboard(peer->bda,
+                                                (esp_ble_addr_type_t)peer->addr_type,
+                                                peer->name,
+                                                "reconnecting");
+            if (ret == ESP_OK) {
+                SOLAR_OS_LOGI(TAG, "reconnect attempt started");
             }
         }
 
@@ -2823,7 +3133,7 @@ static void reconnect_task(void *arg)
 
 static void schedule_reconnect(uint32_t delay_ms)
 {
-    if (!initialized || connected || remembered_peer_count() == 0 || reconnect_suppressed_for_sleep) {
+    if (!initialized || connected || remembered_peer_count() == 0 || reconnect_is_suppressed()) {
         return;
     }
     if (reconnect_task_handle != NULL) {
@@ -2848,19 +3158,68 @@ esp_err_t solar_os_ble_keyboard_start_pairing(void)
         return ESP_ERR_INVALID_STATE;
     }
 
-    if (scan_task_handle != NULL || state == BLE_KEYBOARD_SCANNING || state == BLE_KEYBOARD_CONNECTING) {
-        return ESP_ERR_INVALID_STATE;
-    }
+    pairing_cancel_requested = false;
+    stop_reconnect_task("pairing");
 
-    if (connected) {
-        set_status(BLE_KEYBOARD_CONNECTED, "already connected");
+    reconnect_suppressed_for_pairing = true;
+    const bool pending_closed =
+        close_pending_open_attempt("pairing", BLE_KEYBOARD_PAIR_SWITCH_DISCONNECT_TIMEOUT_MS);
+    reconnect_suppressed_for_pairing = false;
+    if (!pending_closed) {
+        request_pairing_after_pending_connect("pairing");
         return ESP_OK;
     }
 
-    if (xTaskCreate(scan_task, "ble_kbd_scan", 6144, NULL, 4, &scan_task_handle) != pdPASS) {
-        scan_task_handle = NULL;
-        set_status(BLE_KEYBOARD_FAILED, "scan task failed");
-        return ESP_ERR_NO_MEM;
+    if (state == BLE_KEYBOARD_CONNECTING) {
+        request_pairing_after_pending_connect("pairing");
+        return ESP_OK;
+    }
+
+    if (state == BLE_KEYBOARD_PAIRING_PENDING) {
+        return ESP_OK;
+    }
+
+    if (scan_task_handle != NULL ||
+        state == BLE_KEYBOARD_SCANNING ||
+        state == BLE_KEYBOARD_PASSKEY) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    return start_pairing_scan_now();
+}
+
+esp_err_t solar_os_ble_keyboard_cancel_pairing(void)
+{
+    if (!initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    const bool was_pairing = solar_os_ble_keyboard_is_pairing();
+    pairing_retry_pending = false;
+    pairing_cancel_requested = false;
+    reconnect_suppressed_for_pairing = false;
+
+    if (state == BLE_KEYBOARD_SCANNING && active_scan_mode == BLE_KEYBOARD_SCAN_PAIRING) {
+        pairing_cancel_requested = true;
+        SOLAR_OS_LOGI(TAG, "pairing cancel: stopping scan");
+        (void)esp_ble_gap_stop_scanning();
+    }
+
+    if (pending_dev != NULL && state == BLE_KEYBOARD_CONNECTING) {
+        (void)close_pending_open_attempt("pairing cancel", 0);
+    }
+
+    if (!connected &&
+        (state == BLE_KEYBOARD_PAIRING_PENDING ||
+         state == BLE_KEYBOARD_CONNECTING ||
+         state == BLE_KEYBOARD_FAILED ||
+         state == BLE_KEYBOARD_IDLE ||
+         !was_pairing)) {
+        set_status(BLE_KEYBOARD_IDLE, was_pairing ? "pairing cancelled" : "idle");
+    }
+
+    if (!connected && scan_task_handle == NULL) {
+        schedule_reconnect(BLE_KEYBOARD_RECONNECT_INITIAL_DELAY_MS);
     }
 
     return ESP_OK;
@@ -2875,14 +3234,12 @@ esp_err_t solar_os_ble_keyboard_prepare_sleep(uint32_t timeout_ms)
     reconnect_suppressed_for_sleep = true;
     reconnect_fast_until_tick = 0;
 
-    if (reconnect_task_handle != NULL) {
-        TaskHandle_t task = reconnect_task_handle;
-        reconnect_task_handle = NULL;
-        vTaskDelete(task);
-    }
+    stop_reconnect_task("sleep");
 
     while (close_done_sem != NULL && xSemaphoreTake(close_done_sem, 0) == pdTRUE) {
     }
+
+    (void)close_pending_open_attempt("sleep", timeout_ms);
 
     if (!connected || connected_dev == NULL) {
         return ESP_OK;
@@ -2908,9 +3265,15 @@ esp_err_t solar_os_ble_keyboard_prepare_sleep(uint32_t timeout_ms)
 void solar_os_ble_keyboard_resume(void)
 {
     reconnect_suppressed_for_sleep = false;
+    reconnect_suppressed_for_pairing = false;
 
     if (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_ENABLED) {
         esp_bt_controller_wakeup_request();
+        const esp_err_t ret = esp_bt_sleep_disable();
+        if (ret != ESP_OK && ret != ESP_ERR_NOT_SUPPORTED && ret != ESP_ERR_INVALID_STATE) {
+            SOLAR_OS_LOGW(TAG, "resume: BLE sleep disable failed: %s", esp_err_to_name(ret));
+        }
+        vTaskDelay(pdMS_TO_TICKS(BLE_KEYBOARD_RESUME_RECONNECT_DELAY_MS));
     }
 
     if (!initialized || connected || remembered_peer_count() == 0) {
@@ -2918,6 +3281,9 @@ void solar_os_ble_keyboard_resume(void)
     }
 
     start_fast_reconnect_window("resume");
+    memset(previous_keys, 0, sizeof(previous_keys));
+    previous_modifiers = 0;
+    repeat_clear();
     schedule_reconnect(0);
 }
 
@@ -2930,11 +3296,7 @@ esp_err_t solar_os_ble_keyboard_forget(void)
     ble_keyboard_peer_t forgotten_peers[BLE_KEYBOARD_MAX_REMEMBERED];
     memcpy(forgotten_peers, remembered_peers, sizeof(forgotten_peers));
 
-    if (reconnect_task_handle != NULL) {
-        TaskHandle_t task = reconnect_task_handle;
-        reconnect_task_handle = NULL;
-        vTaskDelete(task);
-    }
+    stop_reconnect_task("forget");
 
     esp_err_t ret = clear_remembered_peers();
     if (ret != ESP_OK) {
