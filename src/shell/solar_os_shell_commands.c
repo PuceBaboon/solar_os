@@ -28,6 +28,7 @@
 #include "solar_os_battery.h"
 #include "solar_os_ble_keyboard.h"
 #include "solar_os_config.h"
+#include "solar_os_daq_job.h"
 #include "solar_os_gpio.h"
 #include "solar_os_i2c.h"
 #include "solar_os_identity.h"
@@ -47,6 +48,7 @@
 #include "solar_os_ssh_keys.h"
 #endif
 #include "solar_os_storage.h"
+#include "solar_os_stream.h"
 #include "solar_os_keys.h"
 #include "solar_os_terminal.h"
 #include "solar_os_time.h"
@@ -2169,6 +2171,197 @@ void solar_os_shell_cmd_mem(solar_os_context_t *ctx, int argc, char **argv)
     mem_print_region(term, "Internal", MALLOC_CAP_INTERNAL);
     mem_print_region(term, "PSRAM", MALLOC_CAP_SPIRAM);
     mem_print_region(term, "DMA", MALLOC_CAP_DMA);
+}
+
+static void stream_print_usage(solar_os_shell_io_t *term)
+{
+    solar_os_shell_io_writeln(term, "usage:");
+    solar_os_shell_io_writeln(term, "  stream list");
+    solar_os_shell_io_writeln(term, "  stream status <id>");
+}
+
+void solar_os_shell_cmd_stream(solar_os_context_t *ctx, int argc, char **argv)
+{
+    solar_os_shell_io_t *term = terminal(ctx);
+
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "list") == 0)) {
+        const size_t count = solar_os_stream_count();
+        if (count == 0) {
+            solar_os_shell_io_writeln(term, "streams: none");
+            return;
+        }
+
+        solar_os_shell_io_writeln(term, "ID           TYPE    FORMAT UNIT      SUMMARY");
+        for (size_t i = 0; i < count; i++) {
+            solar_os_stream_info_t info;
+            if (!solar_os_stream_get(i, &info)) {
+                continue;
+            }
+            solar_os_shell_io_printf(term,
+                                     "%-12s %-7s %-6s %-9s %s\n",
+                                     info.id,
+                                     solar_os_stream_type_name(info.type),
+                                     info.format,
+                                     info.unit[0] != '\0' ? info.unit : "-",
+                                     info.summary);
+        }
+        return;
+    }
+
+    if (argc == 3 && strcmp(argv[1], "status") == 0) {
+        solar_os_stream_info_t info;
+        const esp_err_t err = solar_os_stream_get_info(argv[2], &info);
+        if (err == ESP_ERR_NOT_FOUND) {
+            solar_os_shell_io_printf(term, "stream: not found: %s\n", argv[2]);
+            return;
+        }
+        if (err != ESP_OK) {
+            solar_os_shell_io_printf(term, "stream status failed: %s\n", esp_err_to_name(err));
+            return;
+        }
+
+        char header[SOLAR_OS_STREAM_CSV_HEADER_MAX];
+        solar_os_shell_io_printf(term, "ID: %s\n", info.id);
+        solar_os_shell_io_printf(term, "Type: %s\n", solar_os_stream_type_name(info.type));
+        solar_os_shell_io_printf(term, "Format: %s\n", info.format);
+        solar_os_shell_io_printf(term, "Unit: %s\n", info.unit[0] != '\0' ? info.unit : "-");
+        solar_os_shell_io_printf(term, "Summary: %s\n", info.summary);
+        if (solar_os_stream_csv_header(&info, header, sizeof(header)) == ESP_OK) {
+            solar_os_shell_io_printf(term, "CSV: %s\n", header);
+        }
+        return;
+    }
+
+    stream_print_usage(term);
+}
+
+static void daq_print_usage(solar_os_shell_io_t *term)
+{
+    solar_os_shell_io_writeln(term, "usage:");
+    solar_os_shell_io_writeln(term, "  daq status");
+    solar_os_shell_io_writeln(term, "  daq start <stream> <file> [--rate seconds]");
+    solar_os_shell_io_writeln(term, "  daq start <stream> <file> [--rate-ms ms]");
+    solar_os_shell_io_writeln(term, "  daq start <stream> <file> [--changes] [--append|--replace]");
+    solar_os_shell_io_writeln(term, "  daq start <byte-stream> <file> --raw [--append|--replace]");
+    solar_os_shell_io_writeln(term, "  daq stop");
+}
+
+static void daq_print_status(solar_os_shell_io_t *term)
+{
+    solar_os_daq_status_t status;
+    solar_os_daq_job_get_status(&status);
+
+    if (!status.running) {
+        solar_os_shell_io_printf(term,
+                                 "DAQ: stopped%s%s\n",
+                                 status.last_error == ESP_OK ? "" : ", last error ",
+                                 status.last_error == ESP_OK ? "" : esp_err_to_name(status.last_error));
+        return;
+    }
+
+    solar_os_shell_io_printf(term, "DAQ: running %s -> %s\n", status.stream_id, status.path);
+    solar_os_shell_io_printf(term,
+                             "Type: %s, mode %s, interval %" PRIu32 " ms, %s, %s\n",
+                             solar_os_stream_type_name(status.stream_type),
+                             status.raw ? "raw" : "csv",
+                             status.interval_ms,
+                             status.change_only ? "changes" : "samples",
+                             status.append ? "append" : "replace");
+    if (status.raw) {
+        solar_os_shell_io_printf(term,
+                                 "Chunks: written %" PRIu32 ", bytes %" PRIu64
+                                 ", skipped %" PRIu32 ", failed %" PRIu32 "\n",
+                                 status.written_records,
+                                 status.written_bytes,
+                                 status.skipped_records,
+                                 status.failed_records);
+    } else {
+        solar_os_shell_io_printf(term,
+                                 "Records: written %" PRIu32
+                                 ", skipped %" PRIu32 ", failed %" PRIu32 "\n",
+                                 status.written_records,
+                                 status.skipped_records,
+                                 status.failed_records);
+    }
+    if (status.last_error != ESP_OK) {
+        solar_os_shell_io_printf(term, "Last error: %s\n", esp_err_to_name(status.last_error));
+    }
+}
+
+static void daq_print_start_error(solar_os_shell_io_t *term, const char *stream_id, esp_err_t err)
+{
+    if (err == ESP_ERR_NOT_FOUND) {
+        solar_os_shell_io_printf(term, "daq: stream not found: %s\n", stream_id);
+        return;
+    }
+    if (err == ESP_ERR_INVALID_STATE && stream_id != NULL) {
+        solar_os_stream_info_t stream;
+        solar_os_port_info_t port;
+        if (solar_os_stream_get_info(stream_id, &stream) == ESP_OK &&
+            stream.type == SOLAR_OS_STREAM_TYPE_BYTES &&
+            solar_os_port_get_info(stream.id, &port) == ESP_OK &&
+            port.claimed) {
+            solar_os_shell_io_printf(term, "daq: %s is owned by %s\n", stream.id, port.owner);
+            return;
+        }
+    }
+    if (err == ESP_ERR_INVALID_ARG) {
+        daq_print_usage(term);
+        return;
+    }
+    if (err == ESP_ERR_NOT_SUPPORTED) {
+        solar_os_shell_io_writeln(term, "daq: --raw requires a byte stream");
+        return;
+    }
+
+    solar_os_shell_io_printf(term, "daq start failed: %s\n", esp_err_to_name(err));
+}
+
+void solar_os_shell_cmd_daq(solar_os_context_t *ctx, int argc, char **argv)
+{
+    solar_os_shell_io_t *term = terminal(ctx);
+
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "status") == 0)) {
+        daq_print_status(term);
+        return;
+    }
+
+    if (strcmp(argv[1], "stop") == 0) {
+        if (argc != 2) {
+            solar_os_shell_io_writeln(term, "usage: daq stop");
+            return;
+        }
+        const esp_err_t err = solar_os_jobs_stop(ctx, "daq");
+        if (err == ESP_OK) {
+            solar_os_shell_io_writeln(term, "daq: stopped");
+        } else {
+            solar_os_shell_io_printf(term, "daq stop failed: %s\n", esp_err_to_name(err));
+        }
+        return;
+    }
+
+    if (strcmp(argv[1], "start") == 0) {
+        if (argc < 4 || argc > SOLAR_OS_APP_ARG_MAX) {
+            daq_print_usage(term);
+            return;
+        }
+
+        char *job_argv[SOLAR_OS_APP_ARG_MAX];
+        job_argv[0] = "daq";
+        for (int i = 2; i < argc; i++) {
+            job_argv[i - 1] = argv[i];
+        }
+
+        const esp_err_t err = solar_os_jobs_start(ctx, "daq", argc - 1, job_argv);
+        if (err == ESP_OK) {
+            solar_os_shell_io_printf(term, "daq: started %s -> %s\n", argv[2], argv[3]);
+        } else {
+            daq_print_start_error(term, argv[2], err);
+        }
+        return;
+    }
+
+    daq_print_usage(term);
 }
 
 void solar_os_shell_cmd_df(solar_os_context_t *ctx, int argc, char **argv)

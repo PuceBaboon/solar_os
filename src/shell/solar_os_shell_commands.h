@@ -9,6 +9,7 @@ void solar_os_shell_cmd_audio(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_battery(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_ble(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_clear(solar_os_context_t *ctx, int argc, char **argv);
+void solar_os_shell_cmd_daq(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_date(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_df(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_gpio(solar_os_context_t *ctx, int argc, char **argv);
@@ -38,6 +39,7 @@ void solar_os_shell_cmd_sleep(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_sshkey(solar_os_context_t *ctx, int argc, char **argv);
 #endif
 void solar_os_shell_cmd_status(solar_os_context_t *ctx, int argc, char **argv);
+void solar_os_shell_cmd_stream(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_temperature(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_time(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_top(solar_os_context_t *ctx, int argc, char **argv);

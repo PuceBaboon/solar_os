@@ -6,6 +6,7 @@
 #include "solar_os_config.h"
 #include "solar_os_batmon_job.h"
 #include "solar_os_bridge_job.h"
+#include "solar_os_daq_job.h"
 #if SOLAR_OS_PACKAGE_NET
 #include "solar_os_httpd_job.h"
 #endif
@@ -21,6 +22,7 @@
 static const solar_os_job_registry_entry_t registered_jobs[] = {
     {"batmon", "battery voltage trend monitor", &solar_os_batmon_job},
     {"bridge", "raw bidirectional port bridge", &solar_os_bridge_job},
+    {"daq", "capture data streams to CSV", &solar_os_daq_job},
 #if SOLAR_OS_PACKAGE_NET
     {"httpd", "static HTTP file server", &solar_os_httpd_job},
 #endif

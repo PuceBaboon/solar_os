@@ -175,6 +175,8 @@ Shell aliases are defined in `/.shell/alias`. Each non-empty, non-comment line i
 Hardware and sensors:
 
 - `battery [status|config|capacity|min_voltage|max_voltage]`: read smoothed voltage, infer battery/external power from trend plus the max-voltage shortcut, and configure battery estimate limits.
+- `stream [list|status]`: list timestamped data streams available to DAQ jobs.
+- `daq [status|start|stop]`: start or stop CSV capture from one data stream.
 - `gpio [status|list|mode|read|write]`: runtime user GPIO access is limited to GPIO1, GPIO2, GPIO3, and GPIO17.
 - `adc [status|read]`: read analog voltage on ADC-capable runtime GPIOs.
 - `pwm [status|set|off]`: generate LEDC PWM on runtime GPIOs.
@@ -217,6 +219,33 @@ Networking:
 
 `mqtt connect mqtt://host[:port] [username [password]]` or `mqtt connect mqtts://host[:port] [username [password]]` saves the broker settings in NVS. Later `mqtt connect` reuses the saved URL and credentials without requiring an SD card.
 
+## Data Streams
+
+SolarOS exposes sensor and byte-stream sources through a small stream service. Stream records always include `uptime_ms`; they also include UTC `time_ms` when RTC time is trusted.
+
+Current stream IDs:
+
+- `temperature`, `humidity`, and `battery`
+- `mic0` and `mic1` for microphone amplitude levels
+- `adc1`, `adc2`, `adc3`, and `adc17` on ADC-capable expansion pins
+- `gpio1`, `gpio2`, `gpio3`, and `gpio17` for runtime GPIO state
+- `uart0` and `cdc0` as framed byte streams when the port is not owned by another job or shell
+
+Examples:
+
+```text
+stream list
+stream status battery
+daq start battery /logs/battery.csv --rate 60
+daq start gpio17 /logs/key.csv --changes
+daq start uart0 /logs/serial.csv --rate-ms 25
+daq start uart0 /logs/serial.bin --raw --rate-ms 25
+daq status
+daq stop
+```
+
+`daq start` appends by default and writes a CSV header when creating a new CSV file. Use `--replace` to overwrite. Units are encoded in CSV column names, not repeated on every row. Each acquired row or raw byte chunk is flushed and synced to the filesystem before the job continues. `--changes` stores only changed values, which is useful for GPIO state logging. `--raw` is byte-stream only and writes received bytes directly to the file without timestamps, CSV framing, or a header.
+
 ## OTA Release Layout
 
 OTA artifacts are flavor-aware. A release directory can hold several firmware flavors under the same version:
@@ -250,6 +279,7 @@ Jobs run in the background while a foreground app or shell remains active.
 
 - `batmon`: Periodically sample battery voltage and estimate trend/time left. Start with `job start batmon [interval-sec]`; default is `60`. SolarOS smooths ADC readings and uses a rolling trend as the main power-state signal: discharging means battery, charging means external power. Voltage above `battery max_voltage` is a fast external-power shortcut. If three consecutive samples are at or below `battery min_voltage` while on battery, SolarOS requests light sleep.
 - `bridge`: Raw bidirectional byte bridge between two ports. Start with `job start bridge <port-a> <port-b>`, for example `job start bridge cdc0 uart0`.
+- `daq`: Capture one data stream to a timestamped CSV file, or a byte stream to a raw file. Start with `job start daq <stream> <file.csv> [--rate seconds|--rate-ms ms] [--changes] [--append|--replace]`; add `--raw` for direct byte-stream capture.
 - `httpd`: Serve static files from a folder. Start with `job start httpd <folder>`; relative folders resolve under the default SD mount point.
 - `log`: Stream SolarOS log entries to a byte-stream port or SD file. Start with `job start log <port> [error|warn|info|debug]` or `job start log file <path> [error|warn|info|debug]`.
 - `ntp-sync`: Sync RTC time from NTP. Start with `job start ntp-sync [once] [interval-sec] [server]`; defaults are `60` and `pool.ntp.org`. With `once`, the job retries at the interval until the first successful sync, then stops itself.
@@ -264,6 +294,7 @@ job start slip uart0 115200
 job start log cdc0
 job start log uart0
 job start log file /sdcard/.shell/log
+job start daq temperature /logs/temp.csv --rate 60
 job stop log
 job status log
 ```
@@ -373,7 +404,7 @@ src/
   apps/           shell-launched foreground apps
   jobs/           background job registry
   drivers/        display, I2C, SD, RTC, sensors, UART, ADC, PWM
-  services/       terminal, storage, time, sensors, BLE, Wi-Fi, SSH, SCP, GPIO, ADC, PWM
+  services/       terminal, storage, time, streams, sensors, BLE, Wi-Fi, SSH, SCP, GPIO, ADC, PWM
   solar_os.h      common app/job context and foreground app API
   solar_os_jobs.c background job lifecycle and tick dispatch
 ```

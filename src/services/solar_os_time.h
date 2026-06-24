@@ -25,6 +25,7 @@ typedef struct {
 esp_err_t solar_os_time_init(void);
 uint64_t solar_os_time_uptime_ms(void);
 void solar_os_time_format_uptime(uint64_t uptime_ms, char *buffer, size_t len);
+esp_err_t solar_os_time_get_utc_epoch_ms(uint64_t *epoch_ms);
 esp_err_t solar_os_time_get_datetime(solar_os_datetime_t *datetime);
 esp_err_t solar_os_time_set_datetime(const solar_os_datetime_t *datetime);
 esp_err_t solar_os_time_get_utc_datetime(solar_os_datetime_t *datetime);

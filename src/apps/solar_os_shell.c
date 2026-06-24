@@ -26,6 +26,7 @@
 #include "solar_os_log.h"
 #include "solar_os_port.h"
 #include "solar_os_storage.h"
+#include "solar_os_stream.h"
 #include "solar_os_terminal.h"
 
 #define SHELL_INPUT_MAX 192
@@ -64,6 +65,7 @@ typedef struct {
     bool complete_commands;
     bool complete_jobs;
     bool complete_ports;
+    bool complete_streams;
     bool complete_path;
     bool dirs_only;
 } shell_completion_rule_t;
@@ -138,6 +140,8 @@ static const shell_command_t shell_builtin_commands[] = {
     {"status", "show system status", solar_os_shell_cmd_status},
     {"uptime", "show time since boot", solar_os_shell_cmd_uptime},
     {"mem", "show free memory", solar_os_shell_cmd_mem},
+    {"stream", "list data streams", solar_os_shell_cmd_stream},
+    {"daq", "capture data streams", solar_os_shell_cmd_daq},
     {"log", "show SolarOS logs", solar_os_shell_cmd_log},
     {"port", "show byte-stream ports", solar_os_shell_cmd_port},
     {"df", "show SD card free space", solar_os_shell_cmd_df},
@@ -390,6 +394,16 @@ static const char * const ota_subcommands[] = {
 
 static const char * const ota_boot_values[] = {"0", "1"};
 static const char * const ota_flavor_values[] = {"core", "full"};
+static const char * const stream_subcommands[] = {"list", "status"};
+static const char * const daq_subcommands[] = {"status", "start", "stop"};
+static const char * const daq_options[] = {
+    "--rate",
+    "--rate-ms",
+    "--changes",
+    "--append",
+    "--replace",
+    "--raw",
+};
 static const char * const watch_subcommands[] = {"-n"};
 static const char * const ls_options[] = {"-a", "-h", "--"};
 static const char * const rm_options[] = {"-f", "-rf"};
@@ -426,7 +440,27 @@ static const char * const path_job_start_bridge_port[] = {"job", "start", "bridg
 static const char * const path_job_start_httpd[] = {"job", "start", "httpd"};
 static const char * const path_job_start_ntp_sync[] = {"job", "start", "ntp-sync"};
 static const char * const path_job_start_slip[] = {"job", "start", "slip"};
+static const char * const path_job_start_daq[] = {"job", "start", "daq"};
+static const char * const path_job_start_daq_stream[] = {"job", "start", "daq", SHELL_COMPLETION_ANY};
+static const char * const path_job_start_daq_stream_file[] = {
+    "job",
+    "start",
+    "daq",
+    SHELL_COMPLETION_ANY,
+    SHELL_COMPLETION_ANY,
+};
 static const char * const path_job_stop[] = {"job", "stop"};
+static const char * const path_stream[] = {"stream"};
+static const char * const path_stream_status[] = {"stream", "status"};
+static const char * const path_daq[] = {"daq"};
+static const char * const path_daq_start[] = {"daq", "start"};
+static const char * const path_daq_start_stream[] = {"daq", "start", SHELL_COMPLETION_ANY};
+static const char * const path_daq_start_stream_file[] = {
+    "daq",
+    "start",
+    SHELL_COMPLETION_ANY,
+    SHELL_COMPLETION_ANY,
+};
 static const char * const path_ble[] = {"ble"};
 static const char * const path_ble_gatt[] = {"ble", "gatt"};
 static const char * const path_ble_gatt_connect_addr[] = {"ble", "gatt", "connect", SHELL_COMPLETION_ANY};
@@ -537,6 +571,12 @@ static const char * const path_ota_flavor[] = {"ota", "flavor"};
         .path_count = SHELL_ARRAY_COUNT(path_array), \
         .complete_ports = true, \
     }
+#define SHELL_COMPLETION_STREAMS(path_array) \
+    { \
+        .path = path_array, \
+        .path_count = SHELL_ARRAY_COUNT(path_array), \
+        .complete_streams = true, \
+    }
 #define SHELL_COMPLETION_PATH(path_array, only_dirs) \
     { \
         .path = path_array, \
@@ -577,7 +617,16 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_PATH(path_job_start_httpd, true),
     SHELL_COMPLETION_STATIC(path_job_start_ntp_sync, ntp_sync_values),
     SHELL_COMPLETION_PORTS(path_job_start_slip),
+    SHELL_COMPLETION_STREAMS(path_job_start_daq),
+    SHELL_COMPLETION_PATH(path_job_start_daq_stream, false),
+    SHELL_COMPLETION_STATIC(path_job_start_daq_stream_file, daq_options),
     SHELL_COMPLETION_JOBS(path_job_stop),
+    SHELL_COMPLETION_STATIC(path_stream, stream_subcommands),
+    SHELL_COMPLETION_STREAMS(path_stream_status),
+    SHELL_COMPLETION_STATIC(path_daq, daq_subcommands),
+    SHELL_COMPLETION_STREAMS(path_daq_start),
+    SHELL_COMPLETION_PATH(path_daq_start_stream, false),
+    SHELL_COMPLETION_STATIC(path_daq_start_stream_file, daq_options),
     SHELL_COMPLETION_STATIC(path_ble, ble_subcommands),
     SHELL_COMPLETION_STATIC(path_ble_gatt, ble_gatt_subcommands),
     SHELL_COMPLETION_STATIC(path_ble_gatt_connect_addr, ble_addr_type_values),
@@ -632,6 +681,7 @@ static const shell_completion_rule_t shell_completion_rules[] = {
 
 #undef SHELL_COMPLETION_PATH
 #undef SHELL_COMPLETION_PORTS
+#undef SHELL_COMPLETION_STREAMS
 #undef SHELL_COMPLETION_JOBS
 #undef SHELL_COMPLETION_COMMANDS
 #undef SHELL_COMPLETION_OPTIONS
@@ -2255,6 +2305,18 @@ static void shell_completion_emit_ports(shell_completion_match_t *state)
     }
 }
 
+static void shell_completion_emit_streams(shell_completion_match_t *state)
+{
+    const size_t count = solar_os_stream_count();
+
+    for (size_t i = 0; i < count; i++) {
+        solar_os_stream_info_t info;
+        if (solar_os_stream_get(i, &info)) {
+            shell_completion_emit(state, info.id);
+        }
+    }
+}
+
 static bool shell_completion_collect_matches(solar_os_context_t *ctx,
                                              const char * const *tokens,
                                              size_t token_count,
@@ -2297,6 +2359,9 @@ static bool shell_completion_collect_matches(solar_os_context_t *ctx,
         }
         if (rule->complete_ports) {
             shell_completion_emit_ports(state);
+        }
+        if (rule->complete_streams) {
+            shell_completion_emit_streams(state);
         }
     }
 

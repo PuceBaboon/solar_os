@@ -309,6 +309,33 @@ void solar_os_time_format_uptime(uint64_t uptime_ms, char *buffer, size_t len)
     }
 }
 
+esp_err_t solar_os_time_get_utc_epoch_ms(uint64_t *epoch_ms)
+{
+    if (epoch_ms == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    *epoch_ms = 0;
+
+    solar_os_datetime_t utc;
+    esp_err_t ret = solar_os_time_get_utc_datetime(&utc);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+    if (!utc.clock_integrity) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    time_t epoch = 0;
+    ret = epoch_from_utc_datetime(&utc, &epoch);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    *epoch_ms = (uint64_t)epoch * 1000ULL;
+    return ESP_OK;
+}
+
 esp_err_t solar_os_time_get_datetime(solar_os_datetime_t *datetime)
 {
     solar_os_datetime_t utc;

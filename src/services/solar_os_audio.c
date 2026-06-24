@@ -609,6 +609,62 @@ esp_err_t solar_os_audio_measure_level(uint32_t duration_ms, solar_os_audio_leve
     return ESP_OK;
 }
 
+esp_err_t solar_os_audio_measure_channel_level(uint8_t channel,
+                                               uint32_t duration_ms,
+                                               solar_os_audio_level_t *level)
+{
+    if (duration_ms == 0 ||
+        duration_ms > SOLAR_OS_AUDIO_TEST_MAX_MS ||
+        level == NULL ||
+        channel >= AUDIO_CODEC_BOARD_DEFAULT_CHANNELS) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    memset(level, 0, sizeof(*level));
+    esp_err_t ret = solar_os_audio_init();
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    int16_t samples[AUDIO_LEVEL_BUFFER_SAMPLES];
+    const int64_t deadline_us = esp_timer_get_time() + ((int64_t)duration_ms * 1000);
+    uint64_t sum_abs = 0;
+    uint32_t peak = 0;
+
+    while (esp_timer_get_time() < deadline_us) {
+        ret = audio_codec_board_read(samples, sizeof(samples));
+        if (ret != ESP_OK) {
+            return ret;
+        }
+
+        for (size_t i = channel;
+             i < sizeof(samples) / sizeof(samples[0]);
+             i += AUDIO_CODEC_BOARD_DEFAULT_CHANNELS) {
+            const uint32_t value = audio_abs_i16(samples[i]);
+            if (value > peak) {
+                peak = value;
+            }
+            sum_abs += value;
+            level->samples++;
+        }
+    }
+
+    if (level->samples == 0) {
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+
+    const uint32_t average = (uint32_t)(sum_abs / level->samples);
+    level->peak_percent = clamp_percent_u32((peak * 100U) / 32767U);
+    level->average_percent = clamp_percent_u32((average * 100U) / 32767U);
+    SOLAR_OS_LOGD(TAG,
+             "level ch%u: samples=%" PRIu32 " peak=%u avg=%u",
+             (unsigned)channel,
+             level->samples,
+             level->peak_percent,
+             level->average_percent);
+    return ESP_OK;
+}
+
 esp_err_t solar_os_audio_loopback(uint32_t duration_ms, uint8_t volume)
 {
     if (duration_ms == 0 || duration_ms > SOLAR_OS_AUDIO_TEST_MAX_MS || volume > 100) {
