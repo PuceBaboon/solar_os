@@ -21,8 +21,10 @@
 #include "freertos/task.h"
 #include "solar_os_app_registry.h"
 #include "solar_os_identity.h"
+#include "solar_os_job_registry.h"
 #include "solar_os_keys.h"
 #include "solar_os_log.h"
+#include "solar_os_port.h"
 #include "solar_os_storage.h"
 #include "solar_os_terminal.h"
 
@@ -42,6 +44,8 @@
 #define SHELL_WATCH_MAX_INTERVAL_MS 86400000U
 #define SHELL_LOG_FOLLOW_POLL_MS 250U
 #define SHELL_LOG_FOLLOW_BATCH 8
+#define SHELL_ARRAY_COUNT(array) (sizeof(array) / sizeof((array)[0]))
+#define SHELL_COMPLETION_ANY "*"
 
 typedef void (*shell_command_handler_t)(solar_os_context_t *ctx, int argc, char **argv);
 
@@ -52,10 +56,17 @@ typedef struct {
 } shell_command_t;
 
 typedef struct {
-    const char *command;
-    const char * const *subcommands;
-    size_t count;
-} shell_subcommand_set_t;
+    const char * const *path;
+    size_t path_count;
+    const char * const *values;
+    size_t value_count;
+    const char *required_prefix;
+    bool complete_commands;
+    bool complete_jobs;
+    bool complete_ports;
+    bool complete_path;
+    bool dirs_only;
+} shell_completion_rule_t;
 
 typedef struct {
     bool show_all;
@@ -183,11 +194,37 @@ static const char * const setterm_subcommands[] = {
     "ota",
 };
 
+static const char * const setterm_orientation_values[] = {"0", "90", "180", "270"};
+static const char * const setterm_font_values[] = {"mono", "compact"};
+static const char * const setterm_textsize_values[] = {"12", "14", "16", "18", "20"};
+static const char * const setterm_keyboard_values[] = {"us", "de"};
+static const char * const setterm_keyrate_values[] = {"off"};
+static const char * const setterm_timezone_values[] = {"UTC", "Europe/Berlin"};
+
 static const char * const ble_subcommands[] = {
     "status",
     "scan",
     "pair",
     "forget",
+    "gatt",
+};
+
+static const char * const ble_gatt_subcommands[] = {
+    "status",
+    "connect",
+    "disconnect",
+    "services",
+    "chars",
+    "read",
+    "write",
+    "write-nr",
+};
+
+static const char * const ble_addr_type_values[] = {
+    "public",
+    "random",
+    "rpa_public",
+    "rpa_random",
 };
 
 static const char * const wifi_subcommands[] = {
@@ -203,6 +240,11 @@ static const char * const wifi_subcommands[] = {
     "nat",
 };
 
+static const char * const wifi_ap_subcommands[] = {"status", "on", "off"};
+static const char * const wifi_nat_subcommands[] = {"status", "on", "off"};
+static const char * const wifi_ap_auth_values[] = {"open", "wpa", "wpa2", "wpa/wpa2"};
+static const char * const wifi_forget_values[] = {"all"};
+
 #if SOLAR_OS_PACKAGE_NET
 static const char * const mqtt_subcommands[] = {
     "status",
@@ -211,6 +253,9 @@ static const char * const mqtt_subcommands[] = {
     "publish",
     "subscribe",
 };
+
+static const char * const mqtt_qos_values[] = {"0", "1", "2"};
+static const char * const mqtt_retain_values[] = {"0", "1", "on", "off", "retain"};
 #endif
 
 static const char * const job_subcommands[] = {
@@ -218,6 +263,9 @@ static const char * const job_subcommands[] = {
     "start",
     "stop",
 };
+
+static const char * const job_log_values[] = {"file"};
+static const char * const ntp_sync_values[] = {"once"};
 
 static const char * const sd_subcommands[] = {
     "status",
@@ -243,6 +291,8 @@ static const char * const uart_subcommands[] = {
     "read",
 };
 
+static const char * const uart_mode_values[] = {"raw", "line"};
+
 static const char * const port_subcommands[] = {
     "list",
     "status",
@@ -257,6 +307,10 @@ static const char * const log_subcommands[] = {
     "sink",
 };
 
+static const char * const log_level_values[] = {"error", "warn", "info", "debug"};
+static const char * const log_sink_values[] = {"cdc"};
+static const char * const on_off_values[] = {"on", "off"};
+
 static const char * const gpio_subcommands[] = {
     "status",
     "list",
@@ -264,6 +318,11 @@ static const char * const gpio_subcommands[] = {
     "read",
     "write",
 };
+
+static const char * const expansion_gpio_values[] = {"1", "2", "3", "17"};
+static const char * const gpio_mode_values[] = {"in", "out"};
+static const char * const gpio_pull_values[] = {"none", "up", "down"};
+static const char * const bit_values[] = {"0", "1"};
 
 static const char * const adc_subcommands[] = {
     "status",
@@ -282,6 +341,14 @@ static const char * const power_subcommands[] = {
     "idle",
     "sleep",
 };
+
+static const char * const power_profile_values[] = {
+    "performance",
+    "balanced",
+    "solar",
+    "offline",
+};
+static const char * const power_idle_values[] = {"off"};
 
 static const char * const battery_subcommands[] = {
     "status",
@@ -307,6 +374,9 @@ static const char * const sshkey_subcommands[] = {
     "pub",
     "rm",
 };
+
+static const char * const sshkey_gen_values[] = {"-f", "2048", "3072", "4096"};
+static const char * const sshkey_bits_values[] = {"2048", "3072", "4096"};
 #endif
 
 static const char * const ota_subcommands[] = {
@@ -318,30 +388,254 @@ static const char * const ota_subcommands[] = {
     "boot",
 };
 
-static const shell_subcommand_set_t shell_subcommand_sets[] = {
-    {"setterm", setterm_subcommands, sizeof(setterm_subcommands) / sizeof(setterm_subcommands[0])},
-    {"job", job_subcommands, sizeof(job_subcommands) / sizeof(job_subcommands[0])},
-    {"ble", ble_subcommands, sizeof(ble_subcommands) / sizeof(ble_subcommands[0])},
-    {"wifi", wifi_subcommands, sizeof(wifi_subcommands) / sizeof(wifi_subcommands[0])},
-#if SOLAR_OS_PACKAGE_NET
-    {"mqtt", mqtt_subcommands, sizeof(mqtt_subcommands) / sizeof(mqtt_subcommands[0])},
+static const char * const ota_boot_values[] = {"0", "1"};
+static const char * const ota_flavor_values[] = {"core", "full"};
+static const char * const watch_subcommands[] = {"-n"};
+static const char * const ls_options[] = {"-a", "-h", "--"};
+static const char * const rm_options[] = {"-f", "-rf"};
+#if SOLAR_OS_PACKAGE_MEDIA
+static const char * const view_options[] = {"-fit", "-actual"};
 #endif
-    {"sd", sd_subcommands, sizeof(sd_subcommands) / sizeof(sd_subcommands[0])},
-    {"i2c", i2c_subcommands, sizeof(i2c_subcommands) / sizeof(i2c_subcommands[0])},
-    {"uart", uart_subcommands, sizeof(uart_subcommands) / sizeof(uart_subcommands[0])},
-    {"port", port_subcommands, sizeof(port_subcommands) / sizeof(port_subcommands[0])},
-    {"log", log_subcommands, sizeof(log_subcommands) / sizeof(log_subcommands[0])},
-    {"gpio", gpio_subcommands, sizeof(gpio_subcommands) / sizeof(gpio_subcommands[0])},
-    {"adc", adc_subcommands, sizeof(adc_subcommands) / sizeof(adc_subcommands[0])},
-    {"pwm", pwm_subcommands, sizeof(pwm_subcommands) / sizeof(pwm_subcommands[0])},
-    {"power", power_subcommands, sizeof(power_subcommands) / sizeof(power_subcommands[0])},
-    {"battery", battery_subcommands, sizeof(battery_subcommands) / sizeof(battery_subcommands[0])},
-    {"audio", audio_subcommands, sizeof(audio_subcommands) / sizeof(audio_subcommands[0])},
-#if SOLAR_OS_PACKAGE_NET
-    {"sshkey", sshkey_subcommands, sizeof(sshkey_subcommands) / sizeof(sshkey_subcommands[0])},
+
+static const char * const path_ls[] = {"ls"};
+static const char * const path_rm[] = {"rm"};
+#if SOLAR_OS_PACKAGE_MEDIA
+static const char * const path_view[] = {"view"};
 #endif
-    {"ota", ota_subcommands, sizeof(ota_subcommands) / sizeof(ota_subcommands[0])},
+static const char * const path_watch[] = {"watch"};
+static const char * const path_watch_n_interval[] = {"watch", "-n", SHELL_COMPLETION_ANY};
+static const char * const path_setterm[] = {"setterm"};
+static const char * const path_setterm_orientation[] = {"setterm", "orientation"};
+static const char * const path_setterm_font[] = {"setterm", "font"};
+static const char * const path_setterm_textsize[] = {"setterm", "textsize"};
+static const char * const path_setterm_keyboard[] = {"setterm", "keyboard"};
+static const char * const path_setterm_keymap[] = {"setterm", "keymap"};
+static const char * const path_setterm_keyrate[] = {"setterm", "keyrate"};
+static const char * const path_setterm_typerate[] = {"setterm", "typerate"};
+static const char * const path_setterm_repeat[] = {"setterm", "repeat"};
+static const char * const path_setterm_timezone[] = {"setterm", "timezone"};
+static const char * const path_job[] = {"job"};
+static const char * const path_job_status[] = {"job", "status"};
+static const char * const path_job_start[] = {"job", "start"};
+static const char * const path_job_start_shell[] = {"job", "start", "shell"};
+static const char * const path_job_start_log[] = {"job", "start", "log"};
+static const char * const path_job_start_log_port[] = {"job", "start", "log", SHELL_COMPLETION_ANY};
+static const char * const path_job_start_log_file[] = {"job", "start", "log", "file"};
+static const char * const path_job_start_bridge[] = {"job", "start", "bridge"};
+static const char * const path_job_start_bridge_port[] = {"job", "start", "bridge", SHELL_COMPLETION_ANY};
+static const char * const path_job_start_httpd[] = {"job", "start", "httpd"};
+static const char * const path_job_start_ntp_sync[] = {"job", "start", "ntp-sync"};
+static const char * const path_job_start_slip[] = {"job", "start", "slip"};
+static const char * const path_job_stop[] = {"job", "stop"};
+static const char * const path_ble[] = {"ble"};
+static const char * const path_ble_gatt[] = {"ble", "gatt"};
+static const char * const path_ble_gatt_connect_addr[] = {"ble", "gatt", "connect", SHELL_COMPLETION_ANY};
+static const char * const path_wifi[] = {"wifi"};
+static const char * const path_wifi_ap[] = {"wifi", "ap"};
+static const char * const path_wifi_ap_on_auth[] = {
+    "wifi",
+    "ap",
+    "on",
+    SHELL_COMPLETION_ANY,
+    SHELL_COMPLETION_ANY,
 };
+static const char * const path_wifi_nat[] = {"wifi", "nat"};
+static const char * const path_wifi_forget[] = {"wifi", "forget"};
+#if SOLAR_OS_PACKAGE_NET
+static const char * const path_mqtt[] = {"mqtt"};
+static const char * const path_mqtt_publish_payload[] = {
+    "mqtt",
+    "publish",
+    SHELL_COMPLETION_ANY,
+    SHELL_COMPLETION_ANY,
+};
+static const char * const path_mqtt_publish_qos[] = {
+    "mqtt",
+    "publish",
+    SHELL_COMPLETION_ANY,
+    SHELL_COMPLETION_ANY,
+    SHELL_COMPLETION_ANY,
+};
+static const char * const path_mqtt_subscribe_topic[] = {
+    "mqtt",
+    "subscribe",
+    SHELL_COMPLETION_ANY,
+};
+#endif
+static const char * const path_sd[] = {"sd"};
+static const char * const path_i2c[] = {"i2c"};
+static const char * const path_uart[] = {"uart"};
+static const char * const path_uart_mode[] = {"uart", "mode"};
+static const char * const path_port[] = {"port"};
+static const char * const path_port_status[] = {"port", "status"};
+static const char * const path_log[] = {"log"};
+static const char * const path_log_follow[] = {"log", "follow"};
+static const char * const path_log_level[] = {"log", "level"};
+static const char * const path_log_sink[] = {"log", "sink"};
+static const char * const path_log_sink_cdc[] = {"log", "sink", "cdc"};
+static const char * const path_gpio[] = {"gpio"};
+static const char * const path_gpio_mode[] = {"gpio", "mode"};
+static const char * const path_gpio_mode_pin[] = {"gpio", "mode", SHELL_COMPLETION_ANY};
+static const char * const path_gpio_mode_pin_mode[] = {
+    "gpio",
+    "mode",
+    SHELL_COMPLETION_ANY,
+    SHELL_COMPLETION_ANY,
+};
+static const char * const path_gpio_read[] = {"gpio", "read"};
+static const char * const path_gpio_write[] = {"gpio", "write"};
+static const char * const path_gpio_write_pin[] = {"gpio", "write", SHELL_COMPLETION_ANY};
+static const char * const path_adc[] = {"adc"};
+static const char * const path_adc_read[] = {"adc", "read"};
+static const char * const path_pwm[] = {"pwm"};
+static const char * const path_pwm_set[] = {"pwm", "set"};
+static const char * const path_pwm_off[] = {"pwm", "off"};
+static const char * const path_power[] = {"power"};
+static const char * const path_power_profile[] = {"power", "profile"};
+static const char * const path_power_idle[] = {"power", "idle"};
+static const char * const path_battery[] = {"battery"};
+static const char * const path_audio[] = {"audio"};
+#if SOLAR_OS_PACKAGE_NET
+static const char * const path_sshkey[] = {"sshkey"};
+static const char * const path_sshkey_gen[] = {"sshkey", "gen"};
+static const char * const path_sshkey_gen_force[] = {"sshkey", "gen", "-f"};
+#endif
+static const char * const path_ota[] = {"ota"};
+static const char * const path_ota_boot[] = {"ota", "boot"};
+static const char * const path_ota_flavor[] = {"ota", "flavor"};
+
+#define SHELL_COMPLETION_STATIC(path_array, value_array) \
+    { \
+        .path = path_array, \
+        .path_count = SHELL_ARRAY_COUNT(path_array), \
+        .values = value_array, \
+        .value_count = SHELL_ARRAY_COUNT(value_array), \
+    }
+#define SHELL_COMPLETION_OPTIONS(path_array, value_array) \
+    { \
+        .path = path_array, \
+        .path_count = SHELL_ARRAY_COUNT(path_array), \
+        .values = value_array, \
+        .value_count = SHELL_ARRAY_COUNT(value_array), \
+        .required_prefix = "-", \
+    }
+#define SHELL_COMPLETION_COMMANDS(path_array) \
+    { \
+        .path = path_array, \
+        .path_count = SHELL_ARRAY_COUNT(path_array), \
+        .complete_commands = true, \
+    }
+#define SHELL_COMPLETION_JOBS(path_array) \
+    { \
+        .path = path_array, \
+        .path_count = SHELL_ARRAY_COUNT(path_array), \
+        .complete_jobs = true, \
+    }
+#define SHELL_COMPLETION_PORTS(path_array) \
+    { \
+        .path = path_array, \
+        .path_count = SHELL_ARRAY_COUNT(path_array), \
+        .complete_ports = true, \
+    }
+#define SHELL_COMPLETION_PATH(path_array, only_dirs) \
+    { \
+        .path = path_array, \
+        .path_count = SHELL_ARRAY_COUNT(path_array), \
+        .complete_path = true, \
+        .dirs_only = only_dirs, \
+    }
+
+static const shell_completion_rule_t shell_completion_rules[] = {
+    SHELL_COMPLETION_OPTIONS(path_ls, ls_options),
+    SHELL_COMPLETION_OPTIONS(path_rm, rm_options),
+#if SOLAR_OS_PACKAGE_MEDIA
+    SHELL_COMPLETION_OPTIONS(path_view, view_options),
+#endif
+    SHELL_COMPLETION_STATIC(path_watch, watch_subcommands),
+    SHELL_COMPLETION_COMMANDS(path_watch),
+    SHELL_COMPLETION_COMMANDS(path_watch_n_interval),
+    SHELL_COMPLETION_STATIC(path_setterm, setterm_subcommands),
+    SHELL_COMPLETION_STATIC(path_setterm_orientation, setterm_orientation_values),
+    SHELL_COMPLETION_STATIC(path_setterm_font, setterm_font_values),
+    SHELL_COMPLETION_STATIC(path_setterm_textsize, setterm_textsize_values),
+    SHELL_COMPLETION_STATIC(path_setterm_keyboard, setterm_keyboard_values),
+    SHELL_COMPLETION_STATIC(path_setterm_keymap, setterm_keyboard_values),
+    SHELL_COMPLETION_STATIC(path_setterm_keyrate, setterm_keyrate_values),
+    SHELL_COMPLETION_STATIC(path_setterm_typerate, setterm_keyrate_values),
+    SHELL_COMPLETION_STATIC(path_setterm_repeat, setterm_keyrate_values),
+    SHELL_COMPLETION_STATIC(path_setterm_timezone, setterm_timezone_values),
+    SHELL_COMPLETION_STATIC(path_job, job_subcommands),
+    SHELL_COMPLETION_JOBS(path_job_status),
+    SHELL_COMPLETION_JOBS(path_job_start),
+    SHELL_COMPLETION_PORTS(path_job_start_shell),
+    SHELL_COMPLETION_STATIC(path_job_start_log, job_log_values),
+    SHELL_COMPLETION_PORTS(path_job_start_log),
+    SHELL_COMPLETION_STATIC(path_job_start_log_port, log_level_values),
+    SHELL_COMPLETION_PATH(path_job_start_log_file, false),
+    SHELL_COMPLETION_PORTS(path_job_start_bridge),
+    SHELL_COMPLETION_PORTS(path_job_start_bridge_port),
+    SHELL_COMPLETION_PATH(path_job_start_httpd, true),
+    SHELL_COMPLETION_STATIC(path_job_start_ntp_sync, ntp_sync_values),
+    SHELL_COMPLETION_PORTS(path_job_start_slip),
+    SHELL_COMPLETION_JOBS(path_job_stop),
+    SHELL_COMPLETION_STATIC(path_ble, ble_subcommands),
+    SHELL_COMPLETION_STATIC(path_ble_gatt, ble_gatt_subcommands),
+    SHELL_COMPLETION_STATIC(path_ble_gatt_connect_addr, ble_addr_type_values),
+    SHELL_COMPLETION_STATIC(path_wifi, wifi_subcommands),
+    SHELL_COMPLETION_STATIC(path_wifi_ap, wifi_ap_subcommands),
+    SHELL_COMPLETION_STATIC(path_wifi_ap_on_auth, wifi_ap_auth_values),
+    SHELL_COMPLETION_STATIC(path_wifi_nat, wifi_nat_subcommands),
+    SHELL_COMPLETION_STATIC(path_wifi_forget, wifi_forget_values),
+#if SOLAR_OS_PACKAGE_NET
+    SHELL_COMPLETION_STATIC(path_mqtt, mqtt_subcommands),
+    SHELL_COMPLETION_STATIC(path_mqtt_publish_payload, mqtt_qos_values),
+    SHELL_COMPLETION_STATIC(path_mqtt_publish_qos, mqtt_retain_values),
+    SHELL_COMPLETION_STATIC(path_mqtt_subscribe_topic, mqtt_qos_values),
+#endif
+    SHELL_COMPLETION_STATIC(path_sd, sd_subcommands),
+    SHELL_COMPLETION_STATIC(path_i2c, i2c_subcommands),
+    SHELL_COMPLETION_STATIC(path_uart, uart_subcommands),
+    SHELL_COMPLETION_STATIC(path_uart_mode, uart_mode_values),
+    SHELL_COMPLETION_STATIC(path_port, port_subcommands),
+    SHELL_COMPLETION_PORTS(path_port_status),
+    SHELL_COMPLETION_STATIC(path_log, log_subcommands),
+    SHELL_COMPLETION_STATIC(path_log_follow, log_level_values),
+    SHELL_COMPLETION_STATIC(path_log_level, log_level_values),
+    SHELL_COMPLETION_STATIC(path_log_sink, log_sink_values),
+    SHELL_COMPLETION_STATIC(path_log_sink_cdc, on_off_values),
+    SHELL_COMPLETION_STATIC(path_gpio, gpio_subcommands),
+    SHELL_COMPLETION_STATIC(path_gpio_mode, expansion_gpio_values),
+    SHELL_COMPLETION_STATIC(path_gpio_mode_pin, gpio_mode_values),
+    SHELL_COMPLETION_STATIC(path_gpio_mode_pin_mode, gpio_pull_values),
+    SHELL_COMPLETION_STATIC(path_gpio_read, expansion_gpio_values),
+    SHELL_COMPLETION_STATIC(path_gpio_write, expansion_gpio_values),
+    SHELL_COMPLETION_STATIC(path_gpio_write_pin, bit_values),
+    SHELL_COMPLETION_STATIC(path_adc, adc_subcommands),
+    SHELL_COMPLETION_STATIC(path_adc_read, expansion_gpio_values),
+    SHELL_COMPLETION_STATIC(path_pwm, pwm_subcommands),
+    SHELL_COMPLETION_STATIC(path_pwm_set, expansion_gpio_values),
+    SHELL_COMPLETION_STATIC(path_pwm_off, expansion_gpio_values),
+    SHELL_COMPLETION_STATIC(path_power, power_subcommands),
+    SHELL_COMPLETION_STATIC(path_power_profile, power_profile_values),
+    SHELL_COMPLETION_STATIC(path_power_idle, power_idle_values),
+    SHELL_COMPLETION_STATIC(path_battery, battery_subcommands),
+    SHELL_COMPLETION_STATIC(path_audio, audio_subcommands),
+#if SOLAR_OS_PACKAGE_NET
+    SHELL_COMPLETION_STATIC(path_sshkey, sshkey_subcommands),
+    SHELL_COMPLETION_STATIC(path_sshkey_gen, sshkey_gen_values),
+    SHELL_COMPLETION_STATIC(path_sshkey_gen_force, sshkey_bits_values),
+#endif
+    SHELL_COMPLETION_STATIC(path_ota, ota_subcommands),
+    SHELL_COMPLETION_STATIC(path_ota_boot, ota_boot_values),
+    SHELL_COMPLETION_STATIC(path_ota_flavor, ota_flavor_values),
+};
+
+#undef SHELL_COMPLETION_PATH
+#undef SHELL_COMPLETION_PORTS
+#undef SHELL_COMPLETION_JOBS
+#undef SHELL_COMPLETION_COMMANDS
+#undef SHELL_COMPLETION_OPTIONS
+#undef SHELL_COMPLETION_STATIC
 
 static solar_os_shell_session_t *shell_session(solar_os_context_t *ctx)
 {
@@ -1592,17 +1886,6 @@ static void shell_print_path_match(solar_os_shell_io_t *io, const char *dir_path
     solar_os_shell_io_put_char(io, '\n');
 }
 
-static const shell_subcommand_set_t *shell_find_subcommand_set(const char *command)
-{
-    for (size_t i = 0; i < sizeof(shell_subcommand_sets) / sizeof(shell_subcommand_sets[0]); i++) {
-        if (strcmp(command, shell_subcommand_sets[i].command) == 0) {
-            return &shell_subcommand_sets[i];
-        }
-    }
-
-    return NULL;
-}
-
 static void shell_print_builtin_command_matches(solar_os_context_t *ctx, const char *prefix)
 {
     char original[SHELL_INPUT_MAX];
@@ -1628,30 +1911,6 @@ static void shell_print_builtin_command_matches(solar_os_context_t *ctx, const c
         }
     }
     (void)shell_for_each_alias(shell_alias_print_callback, &alias_print);
-
-    shell_prompt(ctx);
-    shell_replace_input(ctx, original);
-}
-
-static void shell_print_subcommand_matches(solar_os_context_t *ctx,
-                                           const shell_subcommand_set_t *set,
-                                           const char *prefix)
-{
-    char original[SHELL_INPUT_MAX];
-    solar_os_shell_io_t *io = shell_io(ctx);
-
-    if (set == NULL) {
-        return;
-    }
-
-    strlcpy(original, shell_session(ctx)->input, sizeof(original));
-
-    solar_os_shell_io_newline(io);
-    for (size_t i = 0; i < set->count; i++) {
-        if (prefix == NULL || starts_with(set->subcommands[i], prefix)) {
-            solar_os_shell_io_writeln(io, set->subcommands[i]);
-        }
-    }
 
     shell_prompt(ctx);
     shell_replace_input(ctx, original);
@@ -1705,51 +1964,62 @@ static void shell_complete_builtin_command(solar_os_context_t *ctx, bool show_ma
     }
 }
 
-static bool shell_complete_subcommand(solar_os_context_t *ctx,
-                                      const char *command,
-                                      size_t token_start,
-                                      bool show_matches)
-{
-    const shell_subcommand_set_t *set = shell_find_subcommand_set(command);
-    const char *match = NULL;
-    size_t match_count = 0;
-    char prefix[SHELL_INPUT_MAX];
+typedef struct {
+    char tokens[SHELL_ARG_MAX][SHELL_INPUT_MAX];
+    size_t starts[SHELL_ARG_MAX];
+    size_t count;
+    bool trailing_space;
+} shell_completion_parse_t;
 
-    if (set == NULL) {
+typedef struct {
+    solar_os_context_t *ctx;
+    solar_os_shell_io_t *io;
+    const char *prefix;
+    char match[SHELL_INPUT_MAX];
+    size_t count;
+    bool print;
+} shell_completion_match_t;
+
+static bool shell_completion_parse_input(solar_os_context_t *ctx, shell_completion_parse_t *parse)
+{
+    solar_os_shell_session_t *session = shell_session(ctx);
+    size_t pos = 0;
+
+    if (parse == NULL) {
         return false;
     }
 
-    const size_t prefix_len = shell_session(ctx)->input_len - token_start;
-    if (prefix_len >= sizeof(prefix)) {
-        return true;
-    }
-    memcpy(prefix, &shell_session(ctx)->input[token_start], prefix_len);
-    prefix[prefix_len] = '\0';
+    memset(parse, 0, sizeof(*parse));
+    parse->trailing_space = session->input_len > 0 &&
+        isspace((unsigned char)session->input[session->input_len - 1]);
 
-    for (size_t i = 0; i < set->count; i++) {
-        if (starts_with(set->subcommands[i], prefix)) {
-            match = set->subcommands[i];
-            match_count++;
+    while (pos < session->input_len) {
+        while (pos < session->input_len &&
+               isspace((unsigned char)session->input[pos])) {
+            pos++;
         }
+        if (pos >= session->input_len) {
+            break;
+        }
+        if (parse->count >= SHELL_ARG_MAX) {
+            return false;
+        }
+
+        const size_t start = pos;
+        while (pos < session->input_len &&
+               !isspace((unsigned char)session->input[pos])) {
+            pos++;
+        }
+        const size_t len = pos - start;
+        if (len >= sizeof(parse->tokens[0])) {
+            return false;
+        }
+        parse->starts[parse->count] = start;
+        memcpy(parse->tokens[parse->count], &session->input[start], len);
+        parse->tokens[parse->count][len] = '\0';
+        parse->count++;
     }
 
-    if (match_count == 0) {
-        return true;
-    }
-
-    shell_session(ctx)->history_browsing = false;
-    shell_session(ctx)->history_index = -1;
-
-    if (match_count == 1 && !show_matches) {
-        char completed[SHELL_INPUT_MAX];
-        snprintf(completed, sizeof(completed), "%.*s%s ", (int)token_start, shell_session(ctx)->input, match);
-        shell_replace_input(ctx, completed);
-        return true;
-    }
-
-    if (show_matches) {
-        shell_print_subcommand_matches(ctx, set, prefix_len == 0 ? NULL : prefix);
-    }
     return true;
 }
 
@@ -1894,47 +2164,297 @@ static void shell_complete_path(solar_os_context_t *ctx, size_t token_start, boo
     heap_caps_free(work);
 }
 
+static bool shell_completion_path_matches(const shell_completion_rule_t *rule,
+                                          const char * const *tokens,
+                                          size_t token_count,
+                                          size_t *wildcard_count)
+{
+    size_t wildcards = 0;
+
+    if (rule == NULL || tokens == NULL || rule->path_count != token_count) {
+        return false;
+    }
+
+    for (size_t i = 0; i < token_count; i++) {
+        if (strcmp(rule->path[i], SHELL_COMPLETION_ANY) == 0) {
+            wildcards++;
+            continue;
+        }
+        if (strcmp(rule->path[i], tokens[i]) != 0) {
+            return false;
+        }
+    }
+
+    if (wildcard_count != NULL) {
+        *wildcard_count = wildcards;
+    }
+    return true;
+}
+
+static void shell_completion_emit(shell_completion_match_t *state, const char *value)
+{
+    if (state == NULL || value == NULL) {
+        return;
+    }
+    if (state->prefix != NULL && !starts_with(value, state->prefix)) {
+        return;
+    }
+
+    strlcpy(state->match, value, sizeof(state->match));
+    state->count++;
+    if (state->print) {
+        solar_os_shell_io_writeln(state->io, value);
+    }
+}
+
+static bool shell_completion_alias_emit_callback(const char *name,
+                                                 int argc,
+                                                 char **argv,
+                                                 void *user)
+{
+    shell_completion_match_t *state = (shell_completion_match_t *)user;
+
+    (void)argc;
+    (void)argv;
+
+    shell_completion_emit(state, name);
+    return true;
+}
+
+static void shell_completion_emit_commands(shell_completion_match_t *state)
+{
+    for (size_t i = 0; i < shell_builtin_command_count; i++) {
+        shell_completion_emit(state, shell_builtin_commands[i].name);
+    }
+    for (size_t i = 0; i < solar_os_app_registry_count(); i++) {
+        const solar_os_app_registry_entry_t *app = solar_os_app_registry_get(i);
+        if (app != NULL && app->name != NULL) {
+            shell_completion_emit(state, app->name);
+        }
+    }
+    (void)shell_for_each_alias(shell_completion_alias_emit_callback, state);
+}
+
+static void shell_completion_emit_jobs(shell_completion_match_t *state)
+{
+    for (size_t i = 0; i < solar_os_job_registry_count(); i++) {
+        const solar_os_job_registry_entry_t *job = solar_os_job_registry_get(i);
+        if (job != NULL && job->name != NULL) {
+            shell_completion_emit(state, job->name);
+        }
+    }
+}
+
+static void shell_completion_emit_ports(shell_completion_match_t *state)
+{
+    solar_os_port_info_t ports[SOLAR_OS_PORT_MAX];
+    const size_t count = solar_os_port_list(ports, SHELL_ARRAY_COUNT(ports));
+
+    for (size_t i = 0; i < count && i < SHELL_ARRAY_COUNT(ports); i++) {
+        shell_completion_emit(state, ports[i].name);
+    }
+}
+
+static bool shell_completion_collect_matches(solar_os_context_t *ctx,
+                                             const char * const *tokens,
+                                             size_t token_count,
+                                             const char *prefix,
+                                             bool print,
+                                             shell_completion_match_t *state)
+{
+    bool rule_seen = false;
+
+    if (state == NULL) {
+        return false;
+    }
+
+    memset(state, 0, sizeof(*state));
+    state->ctx = ctx;
+    state->io = shell_io(ctx);
+    state->prefix = prefix;
+    state->print = print;
+
+    for (size_t i = 0; i < SHELL_ARRAY_COUNT(shell_completion_rules); i++) {
+        const shell_completion_rule_t *rule = &shell_completion_rules[i];
+        if (rule->complete_path ||
+            !shell_completion_path_matches(rule, tokens, token_count, NULL)) {
+            continue;
+        }
+        if (rule->required_prefix != NULL &&
+            (prefix == NULL || !starts_with(prefix, rule->required_prefix))) {
+            continue;
+        }
+
+        rule_seen = true;
+        for (size_t value_index = 0; value_index < rule->value_count; value_index++) {
+            shell_completion_emit(state, rule->values[value_index]);
+        }
+        if (rule->complete_commands) {
+            shell_completion_emit_commands(state);
+        }
+        if (rule->complete_jobs) {
+            shell_completion_emit_jobs(state);
+        }
+        if (rule->complete_ports) {
+            shell_completion_emit_ports(state);
+        }
+    }
+
+    return rule_seen;
+}
+
+static const shell_completion_rule_t *shell_completion_find_path_rule(const char * const *tokens,
+                                                                      size_t token_count)
+{
+    const shell_completion_rule_t *best = NULL;
+    size_t best_wildcards = SHELL_ARG_MAX + 1;
+
+    for (size_t i = 0; i < SHELL_ARRAY_COUNT(shell_completion_rules); i++) {
+        const shell_completion_rule_t *rule = &shell_completion_rules[i];
+        size_t wildcards = 0;
+
+        if (!rule->complete_path ||
+            !shell_completion_path_matches(rule, tokens, token_count, &wildcards)) {
+            continue;
+        }
+        if (best == NULL || wildcards < best_wildcards) {
+            best = rule;
+            best_wildcards = wildcards;
+        }
+    }
+
+    return best;
+}
+
+static void shell_print_argument_completion_matches(solar_os_context_t *ctx,
+                                                    const char * const *tokens,
+                                                    size_t token_count,
+                                                    const char *prefix)
+{
+    char original[SHELL_INPUT_MAX];
+    shell_completion_match_t state;
+
+    strlcpy(original, shell_session(ctx)->input, sizeof(original));
+    solar_os_shell_io_newline(shell_io(ctx));
+    (void)shell_completion_collect_matches(ctx, tokens, token_count, prefix, true, &state);
+    shell_prompt(ctx);
+    shell_replace_input(ctx, original);
+}
+
+static bool shell_complete_argument(solar_os_context_t *ctx,
+                                    const shell_completion_parse_t *parse,
+                                    size_t current_index,
+                                    size_t token_start,
+                                    bool show_matches)
+{
+    const char *completed_tokens[SHELL_ARG_MAX];
+    char effective_command[SHELL_INPUT_MAX];
+    const char *prefix = "";
+    const size_t completed_count = current_index;
+    shell_completion_match_t state;
+
+    if (parse == NULL || parse->count == 0 || current_index >= SHELL_ARG_MAX) {
+        return false;
+    }
+
+    for (size_t i = 0; i < completed_count; i++) {
+        completed_tokens[i] = parse->tokens[i];
+    }
+
+    if (!shell_alias_lookup_target_command(parse->tokens[0],
+                                           effective_command,
+                                           sizeof(effective_command))) {
+        strlcpy(effective_command, parse->tokens[0], sizeof(effective_command));
+    }
+    completed_tokens[0] = effective_command;
+
+    if (!parse->trailing_space && current_index < parse->count) {
+        prefix = parse->tokens[current_index];
+    }
+
+    const shell_completion_rule_t *path_rule =
+        shell_completion_find_path_rule(completed_tokens, completed_count);
+    if (path_rule != NULL) {
+        shell_complete_path(ctx, token_start, path_rule->dirs_only);
+        return true;
+    }
+
+    const bool rule_seen = shell_completion_collect_matches(ctx,
+                                                            completed_tokens,
+                                                            completed_count,
+                                                            prefix,
+                                                            false,
+                                                            &state);
+    if (!rule_seen) {
+        return false;
+    }
+    if (state.count == 0) {
+        return true;
+    }
+
+    shell_session(ctx)->history_browsing = false;
+    shell_session(ctx)->history_index = -1;
+
+    if (state.count == 1 && !show_matches) {
+        char completed[SHELL_INPUT_MAX];
+        snprintf(completed,
+                 sizeof(completed),
+                 "%.*s%s ",
+                 (int)token_start,
+                 shell_session(ctx)->input,
+                 state.match);
+        shell_replace_input(ctx, completed);
+        return true;
+    }
+
+    if (show_matches) {
+        shell_print_argument_completion_matches(ctx,
+                                                completed_tokens,
+                                                completed_count,
+                                                prefix[0] == '\0' ? NULL : prefix);
+    }
+    return true;
+}
+
 static void shell_complete_command(solar_os_context_t *ctx, bool show_matches)
 {
     if (shell_session(ctx)->input_cursor != shell_session(ctx)->input_len) {
         return;
     }
 
-    size_t command_start = 0;
-    while (command_start < shell_session(ctx)->input_len && isspace((unsigned char)shell_session(ctx)->input[command_start])) {
-        command_start++;
+    if (shell_session(ctx)->input_len == 0) {
+        if (show_matches) {
+            shell_print_builtin_command_matches(ctx, NULL);
+        }
+        return;
     }
-    if (command_start != 0 || command_start >= shell_session(ctx)->input_len) {
+    if (isspace((unsigned char)shell_session(ctx)->input[0])) {
+        return;
+    }
+
+    shell_completion_parse_t parse;
+    if (!shell_completion_parse_input(ctx, &parse) || parse.count == 0) {
         if (show_matches && shell_session(ctx)->input_len == 0) {
             shell_print_builtin_command_matches(ctx, NULL);
         }
         return;
     }
 
-    size_t command_end = command_start;
-    while (command_end < shell_session(ctx)->input_len && !isspace((unsigned char)shell_session(ctx)->input[command_end])) {
-        command_end++;
-    }
-    if (command_end == shell_session(ctx)->input_len) {
+    const size_t current_index = parse.trailing_space ? parse.count : parse.count - 1;
+    if (current_index == 0 && !parse.trailing_space) {
         shell_complete_builtin_command(ctx, show_matches);
         return;
     }
 
-    char command[SHELL_INPUT_MAX];
-    const size_t command_len = command_end - command_start;
-    memcpy(command, &shell_session(ctx)->input[command_start], command_len);
-    command[command_len] = '\0';
+    const char *command = parse.tokens[0];
     char effective_command[SHELL_INPUT_MAX];
     if (!shell_alias_lookup_target_command(command, effective_command, sizeof(effective_command))) {
         strlcpy(effective_command, command, sizeof(effective_command));
     }
 
-    size_t token_start = shell_session(ctx)->input_len;
-    while (token_start > command_end && !isspace((unsigned char)shell_session(ctx)->input[token_start - 1])) {
-        token_start--;
-    }
-
-    if (shell_complete_subcommand(ctx, effective_command, token_start, show_matches)) {
+    const size_t token_start =
+        parse.trailing_space ? shell_session(ctx)->input_len : parse.starts[current_index];
+    if (shell_complete_argument(ctx, &parse, current_index, token_start, show_matches)) {
         return;
     }
 

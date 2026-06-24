@@ -2771,6 +2771,164 @@ static void ble_format_bda(const uint8_t *bda, char *buffer, size_t buffer_len)
              bda[5]);
 }
 
+static int ble_hex_nibble(char ch)
+{
+    if (ch >= '0' && ch <= '9') {
+        return ch - '0';
+    }
+    if (ch >= 'a' && ch <= 'f') {
+        return ch - 'a' + 10;
+    }
+    if (ch >= 'A' && ch <= 'F') {
+        return ch - 'A' + 10;
+    }
+    return -1;
+}
+
+static bool ble_parse_bda(const char *text, uint8_t bda[6])
+{
+    if (text == NULL || bda == NULL || strlen(text) != 17) {
+        return false;
+    }
+
+    for (size_t i = 0; i < 6; i++) {
+        const size_t pos = i * 3;
+        const int high = ble_hex_nibble(text[pos]);
+        const int low = ble_hex_nibble(text[pos + 1]);
+        if (high < 0 || low < 0) {
+            return false;
+        }
+        if (i < 5 && text[pos + 2] != ':') {
+            return false;
+        }
+        bda[i] = (uint8_t)((high << 4) | low);
+    }
+    return true;
+}
+
+static bool ble_parse_u16(const char *text, uint16_t *value)
+{
+    if (text == NULL || text[0] == '\0' || value == NULL) {
+        return false;
+    }
+
+    char *end = NULL;
+    const unsigned long parsed = strtoul(text, &end, 0);
+    if (end == text || *end != '\0' || parsed > UINT16_MAX) {
+        return false;
+    }
+    *value = (uint16_t)parsed;
+    return true;
+}
+
+static bool ble_parse_hex_token(const char *text,
+                                uint8_t *buffer,
+                                size_t buffer_len,
+                                size_t *offset)
+{
+    if (text == NULL || buffer == NULL || offset == NULL) {
+        return false;
+    }
+
+    size_t start = 0;
+    size_t len = strlen(text);
+    if (len >= 2 && text[0] == '0' && (text[1] == 'x' || text[1] == 'X')) {
+        start = 2;
+        len -= 2;
+    }
+    if (len == 0 || (len % 2) != 0) {
+        return false;
+    }
+
+    for (size_t i = start; text[i] != '\0'; i += 2) {
+        if (*offset >= buffer_len) {
+            return false;
+        }
+        const int high = ble_hex_nibble(text[i]);
+        const int low = ble_hex_nibble(text[i + 1]);
+        if (high < 0 || low < 0) {
+            return false;
+        }
+        buffer[*offset] = (uint8_t)((high << 4) | low);
+        (*offset)++;
+    }
+    return true;
+}
+
+static bool ble_parse_hex_args(int argc,
+                               char **argv,
+                               int first,
+                               uint8_t *buffer,
+                               size_t buffer_len,
+                               size_t *value_len)
+{
+    if (buffer == NULL || value_len == NULL || first >= argc) {
+        return false;
+    }
+
+    size_t offset = 0;
+    for (int i = first; i < argc; i++) {
+        if (!ble_parse_hex_token(argv[i], buffer, buffer_len, &offset)) {
+            return false;
+        }
+    }
+    *value_len = offset;
+    return offset > 0;
+}
+
+static void ble_format_props(uint8_t properties, char *buffer, size_t buffer_len)
+{
+    if (buffer == NULL || buffer_len == 0) {
+        return;
+    }
+
+    size_t len = 0;
+    if ((properties & (1U << 1)) != 0 && len + 1 < buffer_len) {
+        buffer[len++] = 'r';
+    }
+    if ((properties & (1U << 2)) != 0 && len + 1 < buffer_len) {
+        buffer[len++] = 'w';
+    }
+    if ((properties & (1U << 3)) != 0 && len + 1 < buffer_len) {
+        buffer[len++] = 'W';
+    }
+    if ((properties & (1U << 4)) != 0 && len + 1 < buffer_len) {
+        buffer[len++] = 'n';
+    }
+    if ((properties & (1U << 5)) != 0 && len + 1 < buffer_len) {
+        buffer[len++] = 'i';
+    }
+    if (len == 0 && len + 1 < buffer_len) {
+        buffer[len++] = '-';
+    }
+    buffer[len] = '\0';
+}
+
+static void ble_print_hex_value(solar_os_shell_io_t *term, const uint8_t *value, size_t value_len)
+{
+    solar_os_shell_io_printf(term, "len: %u\n", (unsigned)value_len);
+    solar_os_shell_io_write(term, "hex:");
+    for (size_t i = 0; i < value_len; i++) {
+        solar_os_shell_io_printf(term, " %02x", value[i]);
+    }
+    solar_os_shell_io_write(term, "\n");
+
+    bool printable = value_len > 0;
+    for (size_t i = 0; i < value_len; i++) {
+        if (!isprint(value[i]) && value[i] != '\r' && value[i] != '\n' && value[i] != '\t') {
+            printable = false;
+            break;
+        }
+    }
+    if (printable) {
+        solar_os_shell_io_write(term, "text: ");
+        for (size_t i = 0; i < value_len; i++) {
+            solar_os_shell_io_put_char(term, (char)value[i]);
+        }
+        solar_os_shell_io_write(term, "\n");
+    }
+}
+
 static void ble_set_scan_indicator(solar_os_shell_io_t *term, bool scanning)
 {
     solar_os_terminal_t *display = solar_os_shell_io_terminal(term);
@@ -2832,6 +2990,304 @@ static void ble_cmd_scan(solar_os_shell_io_t *term)
     solar_os_shell_io_writeln(term, "flags: c=connected h=HID k=keyboard-like *=remembered");
 }
 
+static void ble_gatt_print_usage(solar_os_shell_io_t *term)
+{
+    solar_os_shell_io_writeln(term, "usage:");
+    solar_os_shell_io_writeln(term, "  ble gatt status");
+    solar_os_shell_io_writeln(term, "  ble gatt connect <aa:bb:cc:dd:ee:ff> <public|random|rpa_public|rpa_random>");
+    solar_os_shell_io_writeln(term, "  ble gatt disconnect");
+    solar_os_shell_io_writeln(term, "  ble gatt services");
+    solar_os_shell_io_writeln(term, "  ble gatt chars <service-index>");
+    solar_os_shell_io_writeln(term, "  ble gatt read <handle>");
+    solar_os_shell_io_writeln(term, "  ble gatt write <handle> <hex...>");
+    solar_os_shell_io_writeln(term, "  ble gatt write-nr <handle> <hex...>");
+}
+
+static void ble_gatt_print_status(solar_os_shell_io_t *term)
+{
+    solar_os_ble_gatt_status_t status;
+    solar_os_ble_gatt_get_status(&status);
+
+    if (!status.connected) {
+        solar_os_shell_io_printf(term, "GATT: %s\n", status.status);
+        return;
+    }
+
+    char bda[18];
+    ble_format_bda(status.bda, bda, sizeof(bda));
+    solar_os_shell_io_printf(term,
+                             "GATT: %s %s %s conn=%u mtu=%u services=%u\n",
+                             status.status,
+                             bda,
+                             solar_os_ble_keyboard_addr_type_name(status.addr_type),
+                             (unsigned)status.conn_id,
+                             (unsigned)status.mtu,
+                             (unsigned)status.service_count);
+}
+
+static void ble_gatt_cmd_connect(solar_os_shell_io_t *term, int argc, char **argv)
+{
+    if (argc != 5) {
+        solar_os_shell_io_writeln(term,
+                                  "usage: ble gatt connect <aa:bb:cc:dd:ee:ff> <public|random|rpa_public|rpa_random>");
+        return;
+    }
+
+    uint8_t bda[6];
+    uint8_t addr_type = 0;
+    if (!ble_parse_bda(argv[3], bda)) {
+        solar_os_shell_io_writeln(term, "ble gatt: invalid address");
+        return;
+    }
+    if (!solar_os_ble_keyboard_parse_addr_type(argv[4], &addr_type)) {
+        solar_os_shell_io_writeln(term, "ble gatt: invalid address type");
+        return;
+    }
+
+    solar_os_shell_io_writeln(term, "BLE GATT connecting...");
+    solar_os_shell_io_flush(term);
+    const esp_err_t err = solar_os_ble_gatt_connect(bda, addr_type, 0);
+    if (err == ESP_OK) {
+        ble_gatt_print_status(term);
+    } else if (err == ESP_ERR_INVALID_STATE) {
+        solar_os_shell_io_writeln(term, "ble gatt: already connected or unavailable");
+    } else if (err == ESP_ERR_TIMEOUT) {
+        solar_os_shell_io_writeln(term, "ble gatt: connect timeout");
+    } else {
+        solar_os_shell_io_printf(term, "ble gatt connect failed: %s\n", esp_err_to_name(err));
+    }
+}
+
+static void ble_gatt_cmd_services(solar_os_shell_io_t *term)
+{
+    solar_os_ble_gatt_service_t services[SOLAR_OS_BLE_GATT_MAX_SERVICES];
+    size_t count = 0;
+    const esp_err_t err = solar_os_ble_gatt_services(services,
+                                                     sizeof(services) / sizeof(services[0]),
+                                                     &count);
+    if (err == ESP_ERR_INVALID_STATE) {
+        solar_os_shell_io_writeln(term, "ble gatt: not connected");
+        return;
+    }
+    if (err != ESP_OK) {
+        solar_os_shell_io_printf(term, "ble gatt services failed: %s\n", esp_err_to_name(err));
+        return;
+    }
+
+    solar_os_shell_io_writeln(term, "#  Start End   P UUID");
+    const size_t shown = count < SOLAR_OS_BLE_GATT_MAX_SERVICES ?
+        count :
+        SOLAR_OS_BLE_GATT_MAX_SERVICES;
+    for (size_t i = 0; i < shown; i++) {
+        solar_os_shell_io_printf(term,
+                                 "%2u 0x%04x 0x%04x %c %s\n",
+                                 (unsigned)i,
+                                 (unsigned)services[i].start_handle,
+                                 (unsigned)services[i].end_handle,
+                                 services[i].primary ? 'p' : '-',
+                                 services[i].uuid);
+    }
+    if (count > shown) {
+        solar_os_shell_io_printf(term, "%u more services not shown\n", (unsigned)(count - shown));
+    }
+}
+
+static void ble_gatt_cmd_chars(solar_os_shell_io_t *term, int argc, char **argv)
+{
+    if (argc != 4) {
+        solar_os_shell_io_writeln(term, "usage: ble gatt chars <service-index>");
+        return;
+    }
+
+    char *end = NULL;
+    const unsigned long service_index = strtoul(argv[3], &end, 0);
+    if (end == argv[3] || *end != '\0') {
+        solar_os_shell_io_writeln(term, "ble gatt: invalid service index");
+        return;
+    }
+
+    solar_os_ble_gatt_characteristic_t chars[SOLAR_OS_BLE_GATT_MAX_CHARACTERISTICS];
+    size_t count = 0;
+    const esp_err_t err = solar_os_ble_gatt_characteristics((size_t)service_index,
+                                                           chars,
+                                                           sizeof(chars) / sizeof(chars[0]),
+                                                           &count);
+    if (err == ESP_ERR_INVALID_STATE) {
+        solar_os_shell_io_writeln(term, "ble gatt: not connected");
+        return;
+    }
+    if (err == ESP_ERR_NOT_FOUND) {
+        solar_os_shell_io_writeln(term, "ble gatt: service index not found");
+        return;
+    }
+    if (err != ESP_OK) {
+        solar_os_shell_io_printf(term, "ble gatt chars failed: %s\n", esp_err_to_name(err));
+        return;
+    }
+
+    solar_os_shell_io_writeln(term, "Handle Props UUID");
+    const size_t shown = count < SOLAR_OS_BLE_GATT_MAX_CHARACTERISTICS ?
+        count :
+        SOLAR_OS_BLE_GATT_MAX_CHARACTERISTICS;
+    for (size_t i = 0; i < shown; i++) {
+        char props[8];
+        ble_format_props(chars[i].properties, props, sizeof(props));
+        solar_os_shell_io_printf(term,
+                                 "0x%04x %-5s %s\n",
+                                 (unsigned)chars[i].handle,
+                                 props,
+                                 chars[i].uuid);
+    }
+    if (count > shown) {
+        solar_os_shell_io_printf(term, "%u more characteristics not shown\n", (unsigned)(count - shown));
+    }
+    solar_os_shell_io_writeln(term, "props: r=read w=write-nr W=write n=notify i=indicate");
+}
+
+static void ble_gatt_cmd_read(solar_os_shell_io_t *term, int argc, char **argv)
+{
+    if (argc != 4) {
+        solar_os_shell_io_writeln(term, "usage: ble gatt read <handle>");
+        return;
+    }
+
+    uint16_t handle = 0;
+    if (!ble_parse_u16(argv[3], &handle) || handle == 0) {
+        solar_os_shell_io_writeln(term, "ble gatt: invalid handle");
+        return;
+    }
+
+    uint8_t value[SOLAR_OS_BLE_GATT_VALUE_MAX];
+    size_t value_len = 0;
+    const esp_err_t err = solar_os_ble_gatt_read(handle,
+                                                 value,
+                                                 sizeof(value),
+                                                 &value_len,
+                                                 0);
+    if (err == ESP_ERR_INVALID_STATE) {
+        solar_os_shell_io_writeln(term, "ble gatt: not connected");
+        return;
+    }
+    if (err == ESP_ERR_TIMEOUT) {
+        solar_os_shell_io_writeln(term, "ble gatt: read timeout");
+        return;
+    }
+    if (err != ESP_OK) {
+        solar_os_shell_io_printf(term, "ble gatt read failed: %s\n", esp_err_to_name(err));
+        return;
+    }
+
+    ble_print_hex_value(term, value, value_len);
+    if (value_len > sizeof(value)) {
+        solar_os_shell_io_writeln(term, "value truncated");
+    }
+}
+
+static void ble_gatt_cmd_write(solar_os_shell_io_t *term,
+                               int argc,
+                               char **argv,
+                               bool with_response)
+{
+    if (argc < 5) {
+        solar_os_shell_io_writeln(term,
+                                  with_response ?
+                                  "usage: ble gatt write <handle> <hex...>" :
+                                  "usage: ble gatt write-nr <handle> <hex...>");
+        return;
+    }
+
+    uint16_t handle = 0;
+    if (!ble_parse_u16(argv[3], &handle) || handle == 0) {
+        solar_os_shell_io_writeln(term, "ble gatt: invalid handle");
+        return;
+    }
+
+    uint8_t value[SOLAR_OS_BLE_GATT_VALUE_MAX];
+    size_t value_len = 0;
+    if (!ble_parse_hex_args(argc, argv, 4, value, sizeof(value), &value_len)) {
+        solar_os_shell_io_writeln(term, "ble gatt: invalid hex payload");
+        return;
+    }
+
+    const esp_err_t err = solar_os_ble_gatt_write(handle, value, value_len, with_response, 0);
+    if (err == ESP_ERR_INVALID_STATE) {
+        solar_os_shell_io_writeln(term, "ble gatt: not connected");
+        return;
+    }
+    if (err == ESP_ERR_TIMEOUT) {
+        solar_os_shell_io_writeln(term, "ble gatt: write timeout");
+        return;
+    }
+    if (err != ESP_OK) {
+        solar_os_shell_io_printf(term, "ble gatt write failed: %s\n", esp_err_to_name(err));
+        return;
+    }
+
+    solar_os_shell_io_printf(term, "wrote %u byte%s\n", (unsigned)value_len, value_len == 1 ? "" : "s");
+}
+
+static void ble_cmd_gatt(solar_os_shell_io_t *term, int argc, char **argv)
+{
+    if (argc == 2 || strcmp(argv[2], "status") == 0) {
+        if (argc > 3) {
+            solar_os_shell_io_writeln(term, "usage: ble gatt status");
+            return;
+        }
+        ble_gatt_print_status(term);
+        return;
+    }
+
+    if (strcmp(argv[2], "connect") == 0) {
+        ble_gatt_cmd_connect(term, argc, argv);
+        return;
+    }
+
+    if (strcmp(argv[2], "disconnect") == 0) {
+        if (argc != 3) {
+            solar_os_shell_io_writeln(term, "usage: ble gatt disconnect");
+            return;
+        }
+        const esp_err_t err = solar_os_ble_gatt_disconnect();
+        if (err == ESP_OK) {
+            solar_os_shell_io_writeln(term, "BLE GATT disconnected");
+        } else {
+            solar_os_shell_io_printf(term, "ble gatt disconnect failed: %s\n", esp_err_to_name(err));
+        }
+        return;
+    }
+
+    if (strcmp(argv[2], "services") == 0) {
+        if (argc != 3) {
+            solar_os_shell_io_writeln(term, "usage: ble gatt services");
+            return;
+        }
+        ble_gatt_cmd_services(term);
+        return;
+    }
+
+    if (strcmp(argv[2], "chars") == 0) {
+        ble_gatt_cmd_chars(term, argc, argv);
+        return;
+    }
+
+    if (strcmp(argv[2], "read") == 0) {
+        ble_gatt_cmd_read(term, argc, argv);
+        return;
+    }
+
+    if (strcmp(argv[2], "write") == 0) {
+        ble_gatt_cmd_write(term, argc, argv, true);
+        return;
+    }
+
+    if (strcmp(argv[2], "write-nr") == 0) {
+        ble_gatt_cmd_write(term, argc, argv, false);
+        return;
+    }
+
+    ble_gatt_print_usage(term);
+}
+
 void solar_os_shell_cmd_ble(solar_os_context_t *ctx, int argc, char **argv)
 {
     char ble_status[64];
@@ -2880,7 +3336,12 @@ void solar_os_shell_cmd_ble(solar_os_context_t *ctx, int argc, char **argv)
         return;
     }
 
-    solar_os_shell_io_writeln(term, "usage: ble [status|scan|pair|forget]");
+    if (strcmp(argv[1], "gatt") == 0) {
+        ble_cmd_gatt(term, argc, argv);
+        return;
+    }
+
+    solar_os_shell_io_writeln(term, "usage: ble [status|scan|pair|forget|gatt]");
 }
 
 static void wifi_print_usage(solar_os_shell_io_t *term)
