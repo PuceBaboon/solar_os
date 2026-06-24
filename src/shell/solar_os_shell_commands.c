@@ -2829,7 +2829,11 @@ void solar_os_shell_cmd_ble(solar_os_context_t *ctx, int argc, char **argv)
 
     if (argc <= 1 || strcmp(argv[1], "status") == 0) {
         solar_os_ble_keyboard_get_status(ble_status, sizeof(ble_status));
-        solar_os_shell_io_printf(term, "BLE: %s\n", ble_status);
+        solar_os_shell_io_printf(term,
+                                 "BLE: %s, remembered %u/%u\n",
+                                 ble_status,
+                                 (unsigned)solar_os_ble_keyboard_remembered_count(),
+                                 (unsigned)SOLAR_OS_BLE_KEYBOARD_MAX_REMEMBERED);
         return;
     }
 

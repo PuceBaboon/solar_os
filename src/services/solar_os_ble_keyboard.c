@@ -39,8 +39,10 @@
 #define BLE_KEYBOARD_CONN_LATENCY 0U
 #define BLE_KEYBOARD_CONN_TIMEOUT 400U
 #define BLE_KEYBOARD_PEER_MAGIC 0x4b424431U
+#define BLE_KEYBOARD_MAX_REMEMBERED SOLAR_OS_BLE_KEYBOARD_MAX_REMEMBERED
 #define BLE_KEYBOARD_NVS_NAMESPACE "blekbd"
-#define BLE_KEYBOARD_NVS_PEER_KEY "peer"
+#define BLE_KEYBOARD_NVS_PEERS_KEY "peers"
+#define BLE_KEYBOARD_NVS_LEGACY_PEER_KEY "peer"
 #define BLE_KEYBOARD_NVS_LAYOUT_KEY "layout"
 #define BLE_KEYBOARD_NVS_REPEAT_RATE_KEY "repeat_cps"
 #define BLE_KEYBOARD_NVS_REPEAT_DELAY_KEY "repeat_delay"
@@ -117,7 +119,7 @@ static ble_keyboard_candidate_t candidate;
 static solar_os_ble_keyboard_scan_result_t *active_scan_results;
 static size_t active_scan_max_results;
 static size_t active_scan_result_count;
-static ble_keyboard_peer_t remembered_peer;
+static ble_keyboard_peer_t remembered_peers[BLE_KEYBOARD_MAX_REMEMBERED];
 static solar_os_ble_keyboard_layout_t keyboard_layout = SOLAR_OS_BLE_KEYBOARD_LAYOUT_US;
 static uint16_t repeat_rate_cps = BLE_KEYBOARD_REPEAT_RATE_DEFAULT;
 static uint16_t repeat_delay_ms = BLE_KEYBOARD_REPEAT_DELAY_DEFAULT_MS;
@@ -264,25 +266,91 @@ static void set_status(ble_keyboard_state_t next_state, const char *fmt, ...)
     }
 }
 
-static bool remembered_peer_valid(void)
+static bool remembered_peer_valid_at(size_t index)
 {
-    return remembered_peer.magic == BLE_KEYBOARD_PEER_MAGIC;
+    return index < BLE_KEYBOARD_MAX_REMEMBERED &&
+        remembered_peers[index].magic == BLE_KEYBOARD_PEER_MAGIC;
+}
+
+static size_t remembered_peer_count(void)
+{
+    size_t count = 0;
+
+    for (size_t i = 0; i < BLE_KEYBOARD_MAX_REMEMBERED; i++) {
+        if (remembered_peer_valid_at(i)) {
+            count++;
+        }
+    }
+
+    return count;
+}
+
+static const ble_keyboard_peer_t *primary_remembered_peer(void)
+{
+    return remembered_peer_valid_at(0) ? &remembered_peers[0] : NULL;
+}
+
+static int remembered_peer_index_by_bda(const uint8_t *bda)
+{
+    if (bda == NULL) {
+        return -1;
+    }
+
+    for (size_t i = 0; i < BLE_KEYBOARD_MAX_REMEMBERED; i++) {
+        if (remembered_peer_valid_at(i) &&
+            memcmp(bda, remembered_peers[i].bda, sizeof(remembered_peers[i].bda)) == 0) {
+            return (int)i;
+        }
+    }
+
+    return -1;
+}
+
+static int remembered_peer_index_by_name(const char *name)
+{
+    if (name == NULL || name[0] == '\0') {
+        return -1;
+    }
+
+    for (size_t i = 0; i < BLE_KEYBOARD_MAX_REMEMBERED; i++) {
+        if (remembered_peer_valid_at(i) &&
+            remembered_peers[i].name[0] != '\0' &&
+            strcmp(name, remembered_peers[i].name) == 0) {
+            return (int)i;
+        }
+    }
+
+    return -1;
+}
+
+static const ble_keyboard_peer_t *remembered_peer_for_bda(const uint8_t *bda)
+{
+    const int index = remembered_peer_index_by_bda(bda);
+    return index >= 0 ? &remembered_peers[index] : NULL;
+}
+
+static void compact_remembered_peers(void)
+{
+    ble_keyboard_peer_t compact[BLE_KEYBOARD_MAX_REMEMBERED] = {0};
+    size_t out = 0;
+
+    for (size_t i = 0; i < BLE_KEYBOARD_MAX_REMEMBERED; i++) {
+        if (remembered_peer_valid_at(i) && out < BLE_KEYBOARD_MAX_REMEMBERED) {
+            compact[out++] = remembered_peers[i];
+        }
+    }
+
+    memcpy(remembered_peers, compact, sizeof(remembered_peers));
 }
 
 static bool bda_matches_remembered_peer(const uint8_t *bda)
 {
-    return bda != NULL &&
-        remembered_peer_valid() &&
-        memcmp(bda, remembered_peer.bda, sizeof(remembered_peer.bda)) == 0;
+    return remembered_peer_index_by_bda(bda) >= 0;
 }
 
 static bool name_matches_remembered_peer(const char *name)
 {
-    return remembered_peer_valid() &&
-        remembered_peer.name[0] != '\0' &&
-        name != NULL &&
-        name[0] != '\0' &&
-        strcmp(name, remembered_peer.name) == 0;
+    return remembered_peer_index_by_name(name) >= 0;
 }
 
 static esp_err_t load_keyboard_layout(void)
@@ -400,53 +468,8 @@ static esp_err_t save_keyboard_repeat(uint16_t rate_cps, uint16_t delay_ms)
     return ret;
 }
 
-static esp_err_t load_remembered_peer(void)
+static esp_err_t save_remembered_peers_to_nvs(void)
 {
-    nvs_handle_t nvs;
-    esp_err_t ret = nvs_open(BLE_KEYBOARD_NVS_NAMESPACE, NVS_READONLY, &nvs);
-    if (ret == ESP_ERR_NVS_NOT_FOUND) {
-        memset(&remembered_peer, 0, sizeof(remembered_peer));
-        return ESP_OK;
-    }
-    if (ret != ESP_OK) {
-        return ret;
-    }
-
-    size_t len = sizeof(remembered_peer);
-    ret = nvs_get_blob(nvs, BLE_KEYBOARD_NVS_PEER_KEY, &remembered_peer, &len);
-    nvs_close(nvs);
-
-    if (ret == ESP_ERR_NVS_NOT_FOUND) {
-        memset(&remembered_peer, 0, sizeof(remembered_peer));
-        return ESP_OK;
-    }
-    if (ret != ESP_OK) {
-        memset(&remembered_peer, 0, sizeof(remembered_peer));
-        return ret;
-    }
-    if (len != sizeof(remembered_peer) || !remembered_peer_valid()) {
-        memset(&remembered_peer, 0, sizeof(remembered_peer));
-        return ESP_ERR_INVALID_SIZE;
-    }
-
-    SOLAR_OS_LOGI(TAG,
-             "remembered keyboard " ESP_BD_ADDR_STR " addr_type=%s name=%s",
-             ESP_BD_ADDR_HEX(remembered_peer.bda),
-             addr_type_name((esp_ble_addr_type_t)remembered_peer.addr_type),
-             remembered_peer.name[0] ? remembered_peer.name : "(unnamed)");
-    return ESP_OK;
-}
-
-static esp_err_t save_remembered_peer(const uint8_t *bda, esp_ble_addr_type_t addr_type, const char *name)
-{
-    ble_keyboard_peer_t peer = {
-        .magic = BLE_KEYBOARD_PEER_MAGIC,
-        .addr_type = (uint8_t)addr_type,
-    };
-    memcpy(peer.bda, bda, sizeof(peer.bda));
-    strlcpy(peer.name, name != NULL && name[0] ? name : "keyboard", sizeof(peer.name));
-    remembered_peer = peer;
-
     nvs_handle_t nvs;
     esp_err_t ret = nvs_open(BLE_KEYBOARD_NVS_NAMESPACE, NVS_READWRITE, &nvs);
     if (ret != ESP_OK) {
@@ -454,28 +477,133 @@ static esp_err_t save_remembered_peer(const uint8_t *bda, esp_ble_addr_type_t ad
         return ret;
     }
 
-    ret = nvs_set_blob(nvs, BLE_KEYBOARD_NVS_PEER_KEY, &peer, sizeof(peer));
+    ret = nvs_set_blob(nvs,
+                       BLE_KEYBOARD_NVS_PEERS_KEY,
+                       remembered_peers,
+                       sizeof(remembered_peers));
+    if (ret == ESP_OK) {
+        ret = nvs_erase_key(nvs, BLE_KEYBOARD_NVS_LEGACY_PEER_KEY);
+        if (ret == ESP_ERR_NVS_NOT_FOUND) {
+            ret = ESP_OK;
+        }
+    }
     if (ret == ESP_OK) {
         ret = nvs_commit(nvs);
     }
     nvs_close(nvs);
 
-    if (ret == ESP_OK) {
-        SOLAR_OS_LOGI(TAG,
-                 "remembered keyboard " ESP_BD_ADDR_STR " addr_type=%s name=%s",
-                 ESP_BD_ADDR_HEX(peer.bda),
-                 addr_type_name((esp_ble_addr_type_t)peer.addr_type),
-                 peer.name);
-    } else {
-        SOLAR_OS_LOGW(TAG, "save BLE keyboard peer failed: %s", esp_err_to_name(ret));
+    if (ret != ESP_OK) {
+        SOLAR_OS_LOGW(TAG, "save BLE keyboard peers failed: %s", esp_err_to_name(ret));
     }
 
     return ret;
 }
 
-static esp_err_t clear_remembered_peer(void)
+static void log_remembered_peers(void)
 {
-    memset(&remembered_peer, 0, sizeof(remembered_peer));
+    for (size_t i = 0; i < BLE_KEYBOARD_MAX_REMEMBERED; i++) {
+        if (!remembered_peer_valid_at(i)) {
+            continue;
+        }
+
+        SOLAR_OS_LOGI(TAG,
+                 "remembered keyboard %u " ESP_BD_ADDR_STR " addr_type=%s name=%s",
+                 (unsigned)i,
+                 ESP_BD_ADDR_HEX(remembered_peers[i].bda),
+                 addr_type_name((esp_ble_addr_type_t)remembered_peers[i].addr_type),
+                 remembered_peers[i].name[0] ? remembered_peers[i].name : "(unnamed)");
+    }
+}
+
+static esp_err_t load_remembered_peers(void)
+{
+    nvs_handle_t nvs;
+    esp_err_t ret = nvs_open(BLE_KEYBOARD_NVS_NAMESPACE, NVS_READONLY, &nvs);
+    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        memset(remembered_peers, 0, sizeof(remembered_peers));
+        return ESP_OK;
+    }
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    memset(remembered_peers, 0, sizeof(remembered_peers));
+    size_t len = sizeof(remembered_peers);
+    ret = nvs_get_blob(nvs, BLE_KEYBOARD_NVS_PEERS_KEY, remembered_peers, &len);
+    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        ble_keyboard_peer_t legacy_peer = {0};
+        len = sizeof(legacy_peer);
+        ret = nvs_get_blob(nvs, BLE_KEYBOARD_NVS_LEGACY_PEER_KEY, &legacy_peer, &len);
+        if (ret == ESP_OK && len == sizeof(legacy_peer) &&
+            legacy_peer.magic == BLE_KEYBOARD_PEER_MAGIC) {
+            remembered_peers[0] = legacy_peer;
+            nvs_close(nvs);
+            SOLAR_OS_LOGI(TAG, "migrating legacy BLE keyboard peer");
+            (void)save_remembered_peers_to_nvs();
+            log_remembered_peers();
+            return ESP_OK;
+        }
+    }
+    nvs_close(nvs);
+
+    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        memset(remembered_peers, 0, sizeof(remembered_peers));
+        return ESP_OK;
+    }
+    if (ret != ESP_OK) {
+        memset(remembered_peers, 0, sizeof(remembered_peers));
+        return ret;
+    }
+    if (len != sizeof(remembered_peers)) {
+        memset(remembered_peers, 0, sizeof(remembered_peers));
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    compact_remembered_peers();
+    log_remembered_peers();
+    return ESP_OK;
+}
+
+static esp_err_t save_remembered_peer(const uint8_t *bda, esp_ble_addr_type_t addr_type, const char *name)
+{
+    if (bda == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    ble_keyboard_peer_t peer = {
+        .magic = BLE_KEYBOARD_PEER_MAGIC,
+        .addr_type = (uint8_t)addr_type,
+    };
+    memcpy(peer.bda, bda, sizeof(peer.bda));
+    strlcpy(peer.name, name != NULL && name[0] ? name : "keyboard", sizeof(peer.name));
+
+    const int existing_index = remembered_peer_index_by_bda(bda);
+    if (existing_index > 0) {
+        for (int i = existing_index; i > 0; i--) {
+            remembered_peers[i] = remembered_peers[i - 1];
+        }
+    } else if (existing_index < 0) {
+        for (size_t i = BLE_KEYBOARD_MAX_REMEMBERED - 1; i > 0; i--) {
+            remembered_peers[i] = remembered_peers[i - 1];
+        }
+    }
+    remembered_peers[0] = peer;
+
+    const esp_err_t ret = save_remembered_peers_to_nvs();
+    if (ret == ESP_OK) {
+        SOLAR_OS_LOGI(TAG,
+                 "remembered keyboard 0 " ESP_BD_ADDR_STR " addr_type=%s name=%s",
+                 ESP_BD_ADDR_HEX(peer.bda),
+                 addr_type_name((esp_ble_addr_type_t)peer.addr_type),
+                 peer.name);
+    }
+
+    return ret;
+}
+
+static esp_err_t clear_remembered_peers(void)
+{
+    memset(remembered_peers, 0, sizeof(remembered_peers));
 
     nvs_handle_t nvs;
     esp_err_t ret = nvs_open(BLE_KEYBOARD_NVS_NAMESPACE, NVS_READWRITE, &nvs);
@@ -486,9 +614,15 @@ static esp_err_t clear_remembered_peer(void)
         return ret;
     }
 
-    ret = nvs_erase_key(nvs, BLE_KEYBOARD_NVS_PEER_KEY);
+    ret = nvs_erase_key(nvs, BLE_KEYBOARD_NVS_PEERS_KEY);
     if (ret == ESP_ERR_NVS_NOT_FOUND) {
         ret = ESP_OK;
+    }
+    if (ret == ESP_OK) {
+        ret = nvs_erase_key(nvs, BLE_KEYBOARD_NVS_LEGACY_PEER_KEY);
+        if (ret == ESP_ERR_NVS_NOT_FOUND) {
+            ret = ESP_OK;
+        }
     }
     if (ret == ESP_OK) {
         ret = nvs_commit(nvs);
@@ -555,6 +689,11 @@ bool solar_os_ble_keyboard_is_scanning(void)
     }
 
     return scanning;
+}
+
+size_t solar_os_ble_keyboard_remembered_count(void)
+{
+    return remembered_peer_count();
 }
 
 size_t solar_os_ble_keyboard_read_chars(char *buffer, size_t buffer_len)
@@ -826,9 +965,8 @@ static void collect_connected_scan_result(void)
     }
 
     memcpy(slot->bda, bda, sizeof(slot->bda));
-    slot->addr_type = remembered_peer_valid() && bda_matches_remembered_peer(bda) ?
-        remembered_peer.addr_type :
-        (uint8_t)pending_addr_type;
+    const ble_keyboard_peer_t *peer = remembered_peer_for_bda(bda);
+    slot->addr_type = peer != NULL ? peer->addr_type : (uint8_t)pending_addr_type;
     slot->rssi = 0;
     slot->appearance = ESP_HID_APPEARANCE_KEYBOARD;
     slot->hid_service = true;
@@ -1718,7 +1856,7 @@ esp_err_t solar_os_ble_keyboard_init(void)
     if (repeat_ret != ESP_OK) {
         SOLAR_OS_LOGW(TAG, "load keyboard repeat failed: %s", esp_err_to_name(repeat_ret));
     }
-    esp_err_t peer_ret = load_remembered_peer();
+    esp_err_t peer_ret = load_remembered_peers();
     if (peer_ret != ESP_OK) {
         SOLAR_OS_LOGW(TAG, "load remembered keyboard failed: %s", esp_err_to_name(peer_ret));
     }
@@ -1751,7 +1889,7 @@ esp_err_t solar_os_ble_keyboard_init(void)
 
     initialized = true;
     set_status(BLE_KEYBOARD_IDLE, "idle");
-    if (remembered_peer_valid()) {
+    if (remembered_peer_count() > 0) {
         start_fast_reconnect_window("boot");
         schedule_reconnect(0);
     }
@@ -1910,26 +2048,32 @@ static void reconnect_task(void *arg)
         (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(delay_ms));
     }
 
-    while (initialized && remembered_peer_valid() && !connected) {
+    while (initialized && remembered_peer_count() > 0 && !connected) {
         if (scan_task_handle == NULL &&
             state != BLE_KEYBOARD_SCANNING &&
             state != BLE_KEYBOARD_CONNECTING &&
             state != BLE_KEYBOARD_PASSKEY) {
-            SOLAR_OS_LOGI(TAG,
-                     "reconnecting remembered keyboard " ESP_BD_ADDR_STR " addr_type=%s name=%s",
-                     ESP_BD_ADDR_HEX(remembered_peer.bda),
-                     addr_type_name((esp_ble_addr_type_t)remembered_peer.addr_type),
-                     remembered_peer.name[0] ? remembered_peer.name : "(unnamed)");
-
             esp_err_t ret;
             if (direct_attempts < BLE_KEYBOARD_RECONNECT_DIRECT_ATTEMPTS_BEFORE_SCAN) {
+                const ble_keyboard_peer_t *peer = primary_remembered_peer();
+                if (peer == NULL) {
+                    break;
+                }
                 direct_attempts++;
-                ret = open_keyboard(remembered_peer.bda,
-                                    (esp_ble_addr_type_t)remembered_peer.addr_type,
-                                    remembered_peer.name,
+                SOLAR_OS_LOGI(TAG,
+                         "reconnecting remembered keyboard 0 " ESP_BD_ADDR_STR " addr_type=%s name=%s",
+                         ESP_BD_ADDR_HEX(peer->bda),
+                         addr_type_name((esp_ble_addr_type_t)peer->addr_type),
+                         peer->name[0] ? peer->name : "(unnamed)");
+                ret = open_keyboard(peer->bda,
+                                    (esp_ble_addr_type_t)peer->addr_type,
+                                    peer->name,
                                     "reconnecting");
             } else {
                 direct_attempts = 0;
+                SOLAR_OS_LOGI(TAG,
+                              "scanning for %u remembered keyboards",
+                              (unsigned)remembered_peer_count());
                 ret = scan_and_open_keyboard(true);
             }
             if (ret == ESP_OK) {
@@ -1949,7 +2093,7 @@ static void reconnect_task(void *arg)
 
 static void schedule_reconnect(uint32_t delay_ms)
 {
-    if (!initialized || connected || !remembered_peer_valid() || reconnect_suppressed_for_sleep) {
+    if (!initialized || connected || remembered_peer_count() == 0 || reconnect_suppressed_for_sleep) {
         return;
     }
     if (reconnect_task_handle != NULL) {
@@ -2039,7 +2183,7 @@ void solar_os_ble_keyboard_resume(void)
         esp_bt_controller_wakeup_request();
     }
 
-    if (!initialized || connected || !remembered_peer_valid()) {
+    if (!initialized || connected || remembered_peer_count() == 0) {
         return;
     }
 
@@ -2053,11 +2197,8 @@ esp_err_t solar_os_ble_keyboard_forget(void)
         return ESP_ERR_INVALID_STATE;
     }
 
-    esp_bd_addr_t forgotten_bda = {0};
-    const bool had_peer = remembered_peer_valid();
-    if (had_peer) {
-        memcpy(forgotten_bda, remembered_peer.bda, sizeof(forgotten_bda));
-    }
+    ble_keyboard_peer_t forgotten_peers[BLE_KEYBOARD_MAX_REMEMBERED];
+    memcpy(forgotten_peers, remembered_peers, sizeof(forgotten_peers));
 
     if (reconnect_task_handle != NULL) {
         TaskHandle_t task = reconnect_task_handle;
@@ -2065,15 +2206,22 @@ esp_err_t solar_os_ble_keyboard_forget(void)
         vTaskDelete(task);
     }
 
-    esp_err_t ret = clear_remembered_peer();
+    esp_err_t ret = clear_remembered_peers();
     if (ret != ESP_OK) {
         SOLAR_OS_LOGW(TAG, "clear remembered keyboard failed: %s", esp_err_to_name(ret));
     }
 
-    if (had_peer) {
-        esp_err_t remove_ret = esp_ble_remove_bond_device(forgotten_bda);
+    for (size_t i = 0; i < BLE_KEYBOARD_MAX_REMEMBERED; i++) {
+        if (forgotten_peers[i].magic != BLE_KEYBOARD_PEER_MAGIC) {
+            continue;
+        }
+
+        esp_err_t remove_ret = esp_ble_remove_bond_device(forgotten_peers[i].bda);
         if (remove_ret != ESP_OK) {
-            SOLAR_OS_LOGW(TAG, "remove BLE bond failed: %s", esp_err_to_name(remove_ret));
+            SOLAR_OS_LOGW(TAG,
+                          "remove BLE bond %u failed: %s",
+                          (unsigned)i,
+                          esp_err_to_name(remove_ret));
         }
     }
 
