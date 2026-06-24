@@ -43,10 +43,11 @@ typedef enum {
 } ssh_charset_t;
 
 typedef struct {
-    int params[4];
+    int params[8];
     int param_count;
     bool have_value;
     bool private_question;
+    char private_prefix;
 } ssh_csi_state_t;
 
 typedef struct {
@@ -63,6 +64,9 @@ typedef struct {
     bool alt_prefix_pending;
     uint8_t active_charset;
     ssh_charset_t charset[2];
+    size_t saved_row;
+    size_t saved_col;
+    bool saved_cursor_valid;
     bool saw_error;
 } ssh_app_state_t;
 
@@ -226,6 +230,18 @@ static void ssh_reset_csi(void)
     memset(&ssh_app.csi, 0, sizeof(ssh_app.csi));
 }
 
+static void ssh_reset_terminal_modes(solar_os_terminal_t *term)
+{
+    solar_os_terminal_set_bold(term, false);
+    solar_os_terminal_set_inverse(term, false);
+    solar_os_terminal_set_cursor_visible(term, true);
+    solar_os_terminal_utf8_reset(term);
+    ssh_app.active_charset = 0;
+    ssh_app.charset[0] = SSH_CHARSET_ASCII;
+    ssh_app.charset[1] = SSH_CHARSET_ASCII;
+    ssh_app.cursor_application_mode = false;
+}
+
 static int ssh_csi_param(size_t index, int fallback)
 {
     if (index >= (size_t)ssh_app.csi.param_count) {
@@ -234,6 +250,60 @@ static int ssh_csi_param(size_t index, int fallback)
 
     const int value = ssh_app.csi.params[index];
     return value > 0 ? value : fallback;
+}
+
+static bool ssh_csi_has_param(int value)
+{
+    for (int i = 0; i < ssh_app.csi.param_count; i++) {
+        if (ssh_app.csi.params[i] == value) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void ssh_save_cursor(solar_os_terminal_t *term)
+{
+    ssh_app.saved_row = solar_os_terminal_cursor_row(term);
+    ssh_app.saved_col = solar_os_terminal_cursor_col(term);
+    ssh_app.saved_cursor_valid = true;
+}
+
+static void ssh_restore_cursor(solar_os_terminal_t *term)
+{
+    if (ssh_app.saved_cursor_valid) {
+        solar_os_terminal_set_cursor(term, ssh_app.saved_row, ssh_app.saved_col);
+    }
+}
+
+static void ssh_clear_line(solar_os_terminal_t *term, size_t row)
+{
+    const size_t saved_row = solar_os_terminal_cursor_row(term);
+    const size_t saved_col = solar_os_terminal_cursor_col(term);
+
+    solar_os_terminal_set_cursor(term, row, 0);
+    solar_os_terminal_clear_line_from(term, row, 0);
+    solar_os_terminal_set_cursor(term, saved_row, saved_col);
+}
+
+static void ssh_clear_screen_from(solar_os_terminal_t *term, size_t row, size_t col)
+{
+    const size_t rows = solar_os_terminal_rows(term);
+
+    if (row >= rows) {
+        return;
+    }
+    solar_os_terminal_clear_line_from(term, row, col);
+    for (size_t i = row + 1; i < rows; i++) {
+        ssh_clear_line(term, i);
+    }
+}
+
+static void ssh_send_terminal_response(const char *response)
+{
+    if (ssh_app.session != NULL && response != NULL) {
+        (void)solar_os_ssh_send(ssh_app.session, response, strlen(response));
+    }
 }
 
 static void ssh_handle_sgr(solar_os_terminal_t *term)
@@ -253,14 +323,66 @@ static void ssh_handle_sgr(solar_os_terminal_t *term)
         case 1:
             solar_os_terminal_set_bold(term, true);
             break;
+        case 2:
+        case 4:
+        case 5:
+            break;
         case 7:
             solar_os_terminal_set_inverse(term, true);
             break;
         case 22:
             solar_os_terminal_set_bold(term, false);
             break;
+        case 24:
+        case 25:
+            break;
         case 27:
             solar_os_terminal_set_inverse(term, false);
+            break;
+        case 30:
+        case 31:
+        case 32:
+        case 33:
+        case 34:
+        case 35:
+        case 36:
+        case 37:
+        case 38:
+        case 39:
+            break;
+        case 40:
+        case 41:
+        case 42:
+        case 43:
+        case 44:
+        case 45:
+        case 46:
+        case 47:
+        case 48:
+            solar_os_terminal_set_inverse(term, true);
+            break;
+        case 49:
+            solar_os_terminal_set_inverse(term, false);
+            break;
+        case 90:
+        case 91:
+        case 92:
+        case 93:
+        case 94:
+        case 95:
+        case 96:
+        case 97:
+            solar_os_terminal_set_bold(term, true);
+            break;
+        case 100:
+        case 101:
+        case 102:
+        case 103:
+        case 104:
+        case 105:
+        case 106:
+        case 107:
+            solar_os_terminal_set_inverse(term, true);
             break;
         default:
             break;
@@ -295,6 +417,20 @@ static void ssh_handle_csi(solar_os_terminal_t *term, char final)
     case 'D':
         solar_os_terminal_set_cursor(term, row, col > (size_t)count ? col - (size_t)count : 0);
         break;
+    case 'E':
+        row += (size_t)count;
+        if (row >= solar_os_terminal_rows(term)) {
+            row = solar_os_terminal_rows(term) - 1;
+        }
+        solar_os_terminal_set_cursor(term, row, 0);
+        break;
+    case 'F':
+        solar_os_terminal_set_cursor(term, row > (size_t)count ? row - (size_t)count : 0, 0);
+        break;
+    case 'G':
+        col = (size_t)ssh_csi_param(0, 1);
+        solar_os_terminal_set_cursor(term, row, col > 0 ? col - 1 : 0);
+        break;
     case 'H':
     case 'f':
         row = (size_t)ssh_csi_param(0, 1);
@@ -302,22 +438,106 @@ static void ssh_handle_csi(solar_os_terminal_t *term, char final)
         solar_os_terminal_set_cursor(term, row > 0 ? row - 1 : 0, col > 0 ? col - 1 : 0);
         break;
     case 'J':
-        solar_os_terminal_clear(term);
+        switch (ssh_app.csi.params[0]) {
+        case 0:
+            ssh_clear_screen_from(term, row, col);
+            break;
+        case 1:
+        case 2:
+        case 3:
+        default:
+            solar_os_terminal_clear(term);
+            break;
+        }
         break;
     case 'K':
-        solar_os_terminal_clear_line_from(term, row, col);
+        switch (ssh_app.csi.params[0]) {
+        case 0:
+            solar_os_terminal_clear_line_from(term, row, col);
+            break;
+        case 2:
+            ssh_clear_line(term, row);
+            break;
+        case 1:
+        default:
+            break;
+        }
         break;
+    case 'X': {
+        const size_t saved_row = row;
+        const size_t saved_col = col;
+        const size_t cols = solar_os_terminal_cols(term);
+        const size_t erase_count = (size_t)count;
+        const size_t max_count = col < cols ? cols - col : 0;
+        const size_t limit = erase_count < max_count ? erase_count : max_count;
+        for (size_t i = 0; i < limit; i++) {
+            solar_os_terminal_put_codepoint(term, ' ');
+        }
+        solar_os_terminal_set_cursor(term, saved_row, saved_col);
+        break;
+    }
     case 'm':
         ssh_handle_sgr(term);
         break;
+    case 'c':
+        if (ssh_app.csi.private_prefix == '>') {
+            ssh_send_terminal_response("\x1b[>0;0;0c");
+        } else {
+            ssh_send_terminal_response("\x1b[?1;2c");
+        }
+        break;
+    case 'd':
+        row = (size_t)ssh_csi_param(0, 1);
+        solar_os_terminal_set_cursor(term, row > 0 ? row - 1 : 0, col);
+        break;
+    case 's':
+        ssh_save_cursor(term);
+        break;
+    case 'u':
+        ssh_restore_cursor(term);
+        break;
+    case 'n':
+        if (!ssh_app.csi.private_question && ssh_csi_param(0, 0) == 5) {
+            ssh_send_terminal_response("\x1b[0n");
+        } else if (!ssh_app.csi.private_question && ssh_csi_param(0, 0) == 6 &&
+                   ssh_app.session != NULL) {
+            char response[24];
+            const int response_len = snprintf(response,
+                                              sizeof(response),
+                                              "\x1b[%u;%uR",
+                                              (unsigned)solar_os_terminal_cursor_row(term) + 1U,
+                                              (unsigned)solar_os_terminal_cursor_col(term) + 1U);
+            if (response_len > 0 && response_len < (int)sizeof(response)) {
+                (void)solar_os_ssh_send(ssh_app.session, response, (size_t)response_len);
+            }
+        }
+        break;
     case 'h':
-        if (ssh_app.csi.private_question && ssh_csi_param(0, 0) == 1) {
-            ssh_app.cursor_application_mode = true;
+        if (ssh_app.csi.private_question) {
+            if (ssh_csi_has_param(1)) {
+                ssh_app.cursor_application_mode = true;
+            }
+            if (ssh_csi_has_param(25)) {
+                solar_os_terminal_set_cursor_visible(term, true);
+            }
+            if (ssh_csi_has_param(47) || ssh_csi_has_param(1047) || ssh_csi_has_param(1049)) {
+                ssh_save_cursor(term);
+                solar_os_terminal_clear(term);
+            }
         }
         break;
     case 'l':
-        if (ssh_app.csi.private_question && ssh_csi_param(0, 0) == 1) {
-            ssh_app.cursor_application_mode = false;
+        if (ssh_app.csi.private_question) {
+            if (ssh_csi_has_param(1)) {
+                ssh_app.cursor_application_mode = false;
+            }
+            if (ssh_csi_has_param(25)) {
+                solar_os_terminal_set_cursor_visible(term, false);
+            }
+            if (ssh_csi_has_param(47) || ssh_csi_has_param(1047) || ssh_csi_has_param(1049)) {
+                solar_os_terminal_clear(term);
+                ssh_restore_cursor(term);
+            }
         }
         break;
     default:
@@ -415,6 +635,9 @@ static void ssh_feed_output_char(solar_os_terminal_t *term, char ch)
             ssh_app.active_charset = 0;
         } else if ((unsigned char)ch == 0x7f) {
             solar_os_terminal_backspace(term);
+        } else if ((unsigned char)ch < 0x20) {
+            solar_os_terminal_utf8_reset(term);
+            solar_os_terminal_put_char(term, ch);
         } else {
             ssh_put_text_char(term, ch);
         }
@@ -431,6 +654,25 @@ static void ssh_feed_output_char(solar_os_terminal_t *term, char ch)
             ssh_app.ansi_state = SSH_ANSI_CHARSET_G1;
         } else if (ch == '%' || ch == '#') {
             ssh_app.ansi_state = SSH_ANSI_SKIP_ONE;
+        } else if (ch == '7') {
+            ssh_save_cursor(term);
+            ssh_app.ansi_state = SSH_ANSI_NORMAL;
+        } else if (ch == '8') {
+            ssh_restore_cursor(term);
+            ssh_app.ansi_state = SSH_ANSI_NORMAL;
+        } else if (ch == 'D') {
+            solar_os_terminal_newline(term);
+            ssh_app.ansi_state = SSH_ANSI_NORMAL;
+        } else if (ch == 'E') {
+            solar_os_terminal_newline(term);
+            solar_os_terminal_set_cursor(term, solar_os_terminal_cursor_row(term), 0);
+            ssh_app.ansi_state = SSH_ANSI_NORMAL;
+        } else if (ch == 'c') {
+            solar_os_terminal_clear(term);
+            ssh_reset_terminal_modes(term);
+            ssh_app.ansi_state = SSH_ANSI_NORMAL;
+        } else if (ch == '=' || ch == '>') {
+            ssh_app.ansi_state = SSH_ANSI_NORMAL;
         } else {
             ssh_app.ansi_state = SSH_ANSI_NORMAL;
         }
@@ -453,7 +695,7 @@ static void ssh_feed_output_char(solar_os_terminal_t *term, char ch)
                 ssh_app.csi.params[index] = (ssh_app.csi.params[index] * 10) + (ch - '0');
                 ssh_app.csi.have_value = true;
             }
-        } else if (ch == ';') {
+        } else if (ch == ';' || ch == ':') {
             if (ssh_app.csi.param_count == 0) {
                 ssh_app.csi.param_count = 1;
             }
@@ -462,6 +704,9 @@ static void ssh_feed_output_char(solar_os_terminal_t *term, char ch)
             }
         } else if (ch == '?' && ssh_app.csi.param_count == 0 && !ssh_app.csi.have_value) {
             ssh_app.csi.private_question = true;
+            ssh_app.csi.private_prefix = '?';
+        } else if (ch == '>' && ssh_app.csi.param_count == 0 && !ssh_app.csi.have_value) {
+            ssh_app.csi.private_prefix = '>';
         } else if (ch >= '@' && ch <= '~') {
             if (ssh_app.csi.param_count == 0) {
                 ssh_app.csi.param_count = 1;

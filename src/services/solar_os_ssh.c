@@ -21,7 +21,7 @@
 #define SOLAR_OS_SSH_EVENT_QUEUE_LEN 16
 #define SOLAR_OS_SSH_TX_QUEUE_LEN 16
 #define SOLAR_OS_SSH_TX_CHUNK_MAX 64
-#define SOLAR_OS_SSH_TERM_TYPE "vt420pc"
+#define SOLAR_OS_SSH_TERM_TYPE "xterm-mono"
 
 typedef struct {
     size_t len;
@@ -156,6 +156,34 @@ static int ssh_wait_socket(solar_os_ssh_session_t *session,
     return solar_os_ssh_transport_wait_socket(&config, socket_fd, lib_session);
 }
 
+static void ssh_request_env(solar_os_ssh_session_t *session,
+                            LIBSSH2_SESSION *lib_session,
+                            LIBSSH2_CHANNEL *channel,
+                            int socket_fd,
+                            const char *name,
+                            const char *value)
+{
+    int rc = 0;
+    while (!ssh_should_stop(session)) {
+        rc = libssh2_channel_setenv_ex(channel,
+                                       name,
+                                       (unsigned int)strlen(name),
+                                       value,
+                                       (unsigned int)strlen(value));
+        if (rc != LIBSSH2_ERROR_EAGAIN) {
+            break;
+        }
+        (void)ssh_wait_socket(session, socket_fd, lib_session);
+    }
+    if (ssh_should_stop(session)) {
+        return;
+    }
+    if (rc != 0 && rc != LIBSSH2_ERROR_CHANNEL_REQUEST_DENIED &&
+        rc != LIBSSH2_ERROR_REQUEST_DENIED) {
+        SOLAR_OS_LOGD(TAG, "remote env %s rejected: %d", name, rc);
+    }
+}
+
 static LIBSSH2_CHANNEL *ssh_open_shell(solar_os_ssh_session_t *session,
                                        LIBSSH2_SESSION *lib_session,
                                        int socket_fd)
@@ -179,6 +207,9 @@ static LIBSSH2_CHANNEL *ssh_open_shell(solar_os_ssh_session_t *session,
     }
 
     (void)libssh2_channel_handle_extended_data2(channel, LIBSSH2_CHANNEL_EXTENDED_DATA_MERGE);
+    ssh_request_env(session, lib_session, channel, socket_fd, "NO_COLOR", "1");
+    ssh_request_env(session, lib_session, channel, socket_fd, "CLICOLOR", "0");
+    ssh_request_env(session, lib_session, channel, socket_fd, "CLICOLOR_FORCE", "0");
 
     int rc;
     while (!ssh_should_stop(session) &&
