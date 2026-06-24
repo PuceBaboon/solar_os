@@ -17,8 +17,11 @@
 #define BATTERY_ALLOWED_MIN_MV 2500U
 #define BATTERY_ALLOWED_MAX_MV 5000U
 #define BATTERY_CAPACITY_MAX_MAH 100000U
+#define BATTERY_ADC_AVG_WINDOW 8U
 #define BATTERY_MONITOR_HISTORY 16U
-#define BATTERY_TREND_THRESHOLD_MVH 5
+#define BATTERY_TREND_WINDOW 8U
+#define BATTERY_TREND_MIN_SAMPLES 4U
+#define BATTERY_TREND_THRESHOLD_MVH 10
 
 typedef struct {
     uint32_t tick_ms;
@@ -36,6 +39,10 @@ static solar_os_battery_monitor_status_t monitor_status = {
     .trend = SOLAR_OS_BATTERY_TREND_UNKNOWN,
     .last_error = ESP_OK,
 };
+static uint16_t battery_adc_samples[BATTERY_ADC_AVG_WINDOW];
+static size_t battery_adc_sample_count;
+static size_t battery_adc_sample_index;
+static uint32_t battery_adc_sample_sum;
 static battery_monitor_sample_t monitor_samples[BATTERY_MONITOR_HISTORY];
 static size_t monitor_sample_count;
 
@@ -126,11 +133,31 @@ static bool battery_voltage_external_power(uint16_t mv)
     return mv > battery_config.max_voltage_mv;
 }
 
+static uint16_t battery_push_adc_average(uint16_t mv)
+{
+    if (battery_adc_sample_count < BATTERY_ADC_AVG_WINDOW) {
+        battery_adc_samples[battery_adc_sample_count++] = mv;
+        battery_adc_sample_sum += mv;
+    } else {
+        battery_adc_sample_sum -= battery_adc_samples[battery_adc_sample_index];
+        battery_adc_samples[battery_adc_sample_index] = mv;
+        battery_adc_sample_sum += mv;
+        battery_adc_sample_index++;
+        if (battery_adc_sample_index >= BATTERY_ADC_AVG_WINDOW) {
+            battery_adc_sample_index = 0;
+        }
+    }
+
+    return (uint16_t)((battery_adc_sample_sum + (battery_adc_sample_count / 2U)) /
+                      battery_adc_sample_count);
+}
+
 static bool battery_monitor_indicates_external_power(void)
 {
     return monitor_status.running &&
-        monitor_status.sample_count >= 2 &&
-        monitor_status.trend == SOLAR_OS_BATTERY_TREND_CHARGING;
+        monitor_status.sample_count >= BATTERY_TREND_MIN_SAMPLES &&
+        monitor_status.trend == SOLAR_OS_BATTERY_TREND_CHARGING &&
+        monitor_status.external_power;
 }
 
 static void battery_monitor_reset_estimate(void)
@@ -169,6 +196,46 @@ static void battery_monitor_push_sample(uint32_t now_ms, uint16_t voltage_mv)
     };
 }
 
+static bool battery_monitor_calculate_slope(int32_t *slope_mvh)
+{
+    if (slope_mvh == NULL || monitor_sample_count < BATTERY_TREND_MIN_SAMPLES) {
+        return false;
+    }
+
+    const size_t start = monitor_sample_count > BATTERY_TREND_WINDOW ?
+        monitor_sample_count - BATTERY_TREND_WINDOW :
+        0;
+    const size_t count = monitor_sample_count - start;
+    if (count < BATTERY_TREND_MIN_SAMPLES) {
+        return false;
+    }
+
+    const uint32_t base_ms = monitor_samples[start].tick_ms;
+    int64_t sum_t = 0;
+    int64_t sum_v = 0;
+    int64_t sum_tt = 0;
+    int64_t sum_tv = 0;
+
+    for (size_t i = start; i < monitor_sample_count; i++) {
+        const int64_t t = (int64_t)(monitor_samples[i].tick_ms - base_ms);
+        const int64_t v = (int64_t)monitor_samples[i].voltage_mv;
+        sum_t += t;
+        sum_v += v;
+        sum_tt += t * t;
+        sum_tv += t * v;
+    }
+
+    const int64_t n = (int64_t)count;
+    const int64_t denominator = (n * sum_tt) - (sum_t * sum_t);
+    if (denominator == 0) {
+        return false;
+    }
+
+    const int64_t numerator = (n * sum_tv) - (sum_t * sum_v);
+    *slope_mvh = (int32_t)((numerator * 3600000LL) / denominator);
+    return true;
+}
+
 static void battery_monitor_update_estimate(void)
 {
     monitor_status.trend = SOLAR_OS_BATTERY_TREND_UNKNOWN;
@@ -188,27 +255,18 @@ static void battery_monitor_update_estimate(void)
         return;
     }
 
-    if (monitor_sample_count < 2) {
+    int32_t slope_mvh = 0;
+    if (!battery_monitor_calculate_slope(&slope_mvh)) {
         return;
     }
+    monitor_status.slope_mvh = slope_mvh;
 
-    const battery_monitor_sample_t *oldest = &monitor_samples[0];
-    const uint32_t elapsed_ms = newest->tick_ms - oldest->tick_ms;
-    if (elapsed_ms == 0) {
-        return;
-    }
-
-    const int32_t delta_mv = (int32_t)newest->voltage_mv - (int32_t)oldest->voltage_mv;
-    const int64_t slope =
-        ((int64_t)delta_mv * 3600000LL) / (int64_t)elapsed_ms;
-    monitor_status.slope_mvh = (int32_t)slope;
-
-    if (slope > BATTERY_TREND_THRESHOLD_MVH) {
+    if (slope_mvh > BATTERY_TREND_THRESHOLD_MVH) {
         monitor_status.trend = SOLAR_OS_BATTERY_TREND_CHARGING;
         monitor_status.external_power = true;
         return;
     }
-    if (slope < -BATTERY_TREND_THRESHOLD_MVH) {
+    if (slope_mvh < -BATTERY_TREND_THRESHOLD_MVH) {
         monitor_status.trend = SOLAR_OS_BATTERY_TREND_DISCHARGING;
         battery_load_config();
         if (newest->voltage_mv <= battery_config.min_voltage_mv) {
@@ -218,7 +276,7 @@ static void battery_monitor_update_estimate(void)
         }
 
         const uint32_t remaining_mv = newest->voltage_mv - battery_config.min_voltage_mv;
-        const uint32_t drain_mvh = (uint32_t)(-slope);
+        const uint32_t drain_mvh = (uint32_t)(-slope_mvh);
         if (drain_mvh > 0) {
             monitor_status.time_left_min = (remaining_mv * 60U) / drain_mvh;
             monitor_status.time_left_valid = true;
@@ -249,8 +307,9 @@ esp_err_t solar_os_battery_get_status(solar_os_battery_status_t *status)
         return ret;
     }
 
-    status->voltage_mv = sample.battery_mv;
-    status->percent = battery_percent_from_voltage(sample.battery_mv);
+    const uint16_t averaged_mv = battery_push_adc_average(sample.battery_mv);
+    status->voltage_mv = averaged_mv;
+    status->percent = battery_percent_from_voltage(averaged_mv);
     status->percent_estimated = true;
     status->adc_calibrated = sample.calibrated;
     status->external_power = battery_voltage_external_power(sample.battery_mv) ||

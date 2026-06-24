@@ -174,7 +174,7 @@ Shell aliases are defined in `/.shell/alias`. Each non-empty, non-comment line i
 
 Hardware and sensors:
 
-- `battery [status|config|capacity|min_voltage|max_voltage]`: read voltage, infer external power, and configure battery estimate limits.
+- `battery [status|config|capacity|min_voltage|max_voltage]`: read smoothed voltage, infer battery/external power from trend plus the max-voltage shortcut, and configure battery estimate limits.
 - `gpio [status|list|mode|read|write]`: runtime user GPIO access is limited to GPIO1, GPIO2, GPIO3, and GPIO17.
 - `adc [status|read]`: read analog voltage on ADC-capable runtime GPIOs.
 - `pwm [status|set|off]`: generate LEDC PWM on runtime GPIOs.
@@ -245,7 +245,7 @@ With the default OTA URL, a device targeting `full` uses `https://hypergraph.clo
 
 Jobs run in the background while a foreground app or shell remains active.
 
-- `batmon`: Periodically sample battery voltage and estimate trend/time left. Start with `job start batmon [interval-sec]`; default is `60`. Voltage above `battery max_voltage` or a confirmed charging trend is external power. If three consecutive samples are at or below `battery min_voltage` while on battery, SolarOS requests light sleep.
+- `batmon`: Periodically sample battery voltage and estimate trend/time left. Start with `job start batmon [interval-sec]`; default is `60`. SolarOS smooths ADC readings and uses a rolling trend as the main power-state signal: discharging means battery, charging means external power. Voltage above `battery max_voltage` is a fast external-power shortcut. If three consecutive samples are at or below `battery min_voltage` while on battery, SolarOS requests light sleep.
 - `bridge`: Raw bidirectional byte bridge between two ports. Start with `job start bridge <port-a> <port-b>`, for example `job start bridge cdc0 uart0`.
 - `httpd`: Serve static files from a folder. Start with `job start httpd <folder>`; relative folders resolve under the default SD mount point.
 - `log`: Stream SolarOS log entries to a byte-stream port or SD file. Start with `job start log <port> [error|warn|info|debug]` or `job start log file <path> [error|warn|info|debug]`.
