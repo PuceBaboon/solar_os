@@ -333,6 +333,7 @@ void solar_os_shell_cmd_pkg(solar_os_context_t *ctx, int argc, char **argv)
     pkg_print_one(term, "media", SOLAR_OS_PACKAGE_MEDIA, "image viewer and image decoders");
     pkg_print_one(term, "games", SOLAR_OS_PACKAGE_GAMES, "built-in games");
     pkg_print_one(term, "python", SOLAR_OS_PACKAGE_PYTHON, "MicroPython runtime");
+    pkg_print_one(term, "lua", SOLAR_OS_PACKAGE_LUA, "Lua runtime");
     pkg_print_one(term, "utils", SOLAR_OS_PACKAGE_UTILS, "editor, pager, reader, clock, serial terminal");
 }
 

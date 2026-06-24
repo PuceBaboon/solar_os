@@ -9,4 +9,5 @@ net = true
 media = true
 games = true
 python = true
+lua = true
 utils = true
