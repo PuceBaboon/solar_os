@@ -2740,6 +2740,80 @@ void solar_os_shell_cmd_battery(solar_os_context_t *ctx, int argc, char **argv)
     battery_print_usage(term);
 }
 
+static void ble_format_bda(const uint8_t *bda, char *buffer, size_t buffer_len)
+{
+    if (buffer == NULL || buffer_len == 0) {
+        return;
+    }
+    if (bda == NULL || buffer_len < 18) {
+        buffer[0] = '\0';
+        return;
+    }
+
+    snprintf(buffer,
+             buffer_len,
+             "%02x:%02x:%02x:%02x:%02x:%02x",
+             bda[0],
+             bda[1],
+             bda[2],
+             bda[3],
+             bda[4],
+             bda[5]);
+}
+
+static void ble_set_scan_indicator(solar_os_shell_io_t *term, bool scanning)
+{
+    solar_os_terminal_t *display = solar_os_shell_io_terminal(term);
+    if (display == NULL) {
+        return;
+    }
+
+    solar_os_status_bar_t status;
+    solar_os_terminal_get_status_bar(display, &status);
+    status.ble_scanning = scanning;
+    status.ble_connected = solar_os_ble_keyboard_is_connected();
+    solar_os_terminal_set_status_bar(display, &status);
+}
+
+static void ble_cmd_scan(solar_os_shell_io_t *term)
+{
+    solar_os_ble_keyboard_scan_result_t results[SOLAR_OS_BLE_KEYBOARD_SCAN_MAX_RESULTS];
+    size_t found = 0;
+
+    solar_os_shell_io_writeln(term, "BLE scanning...");
+    ble_set_scan_indicator(term, true);
+    solar_os_shell_io_flush(term);
+
+    const esp_err_t err = solar_os_ble_keyboard_scan(results,
+                                                     sizeof(results) / sizeof(results[0]),
+                                                     &found);
+    ble_set_scan_indicator(term, false);
+    if (err == ESP_ERR_NOT_FOUND || found == 0) {
+        solar_os_shell_io_writeln(term, "no BLE HID keyboards found");
+        return;
+    }
+    if (err != ESP_OK) {
+        solar_os_shell_io_printf(term, "BLE scan failed: %s\n", esp_err_to_name(err));
+        return;
+    }
+
+    solar_os_shell_io_writeln(term, "RSSI Type       Address           Appr   Flags Name");
+    for (size_t i = 0; i < found; i++) {
+        char bda[18];
+        ble_format_bda(results[i].bda, bda, sizeof(bda));
+        solar_os_shell_io_printf(term,
+                                 "%4d %-10s %-17s 0x%04x %c%c    %s\n",
+                                 (int)results[i].rssi,
+                                 solar_os_ble_keyboard_addr_type_name(results[i].addr_type),
+                                 bda,
+                                 results[i].appearance,
+                                 results[i].keyboard_like ? 'k' : '-',
+                                 results[i].remembered ? '*' : '-',
+                                 results[i].name[0] ? results[i].name : "(unnamed)");
+    }
+    solar_os_shell_io_writeln(term, "flags: k=keyboard-like *=remembered");
+}
+
 void solar_os_shell_cmd_ble(solar_os_context_t *ctx, int argc, char **argv)
 {
     char ble_status[64];
@@ -2752,11 +2826,24 @@ void solar_os_shell_cmd_ble(solar_os_context_t *ctx, int argc, char **argv)
     }
 
     if (strcmp(argv[1], "scan") == 0) {
+        if (argc != 2) {
+            solar_os_shell_io_writeln(term, "usage: ble scan");
+            return;
+        }
+        ble_cmd_scan(term);
+        return;
+    }
+
+    if (strcmp(argv[1], "pair") == 0) {
+        if (argc != 2) {
+            solar_os_shell_io_writeln(term, "usage: ble pair");
+            return;
+        }
         const esp_err_t err = solar_os_ble_keyboard_start_pairing();
         if (err == ESP_OK) {
-            solar_os_shell_io_writeln(term, "BLE scan started");
+            solar_os_shell_io_writeln(term, "BLE pairing scan started");
         } else {
-            solar_os_shell_io_printf(term, "BLE scan failed: %s\n", esp_err_to_name(err));
+            solar_os_shell_io_printf(term, "BLE pairing failed: %s\n", esp_err_to_name(err));
         }
         return;
     }
@@ -2771,7 +2858,7 @@ void solar_os_shell_cmd_ble(solar_os_context_t *ctx, int argc, char **argv)
         return;
     }
 
-    solar_os_shell_io_writeln(term, "usage: ble [status|scan|forget]");
+    solar_os_shell_io_writeln(term, "usage: ble [status|scan|pair|forget]");
 }
 
 static void wifi_print_usage(solar_os_shell_io_t *term)

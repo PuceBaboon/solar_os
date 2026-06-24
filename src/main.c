@@ -520,6 +520,7 @@ static void update_status(void)
     }
 
     status.ble_connected = solar_os_ble_keyboard_is_connected();
+    status.ble_scanning = solar_os_ble_keyboard_is_scanning();
     status.sd_mounted = solar_os_storage_is_mounted();
 
     solar_os_audio_status_t audio;

@@ -198,7 +198,7 @@ Power profiles:
 
 Networking:
 
-- `ble [status|scan|forget]`
+- `ble [status|scan|pair|forget]`: `scan` lists nearby BLE HID keyboards; `pair` starts the pairing scan.
 - `wifi`: open the Wi-Fi status/control TUI.
 - `wifi [status|on|off|scan|connect|disconnect|forget|nat]`
 - `wifi ap [status|on|off]`: start a SoftAP, including APSTA when station mode is also active.

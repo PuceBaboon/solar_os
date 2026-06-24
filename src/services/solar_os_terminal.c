@@ -933,6 +933,7 @@ static bool terminal_status_bar_equal(const solar_os_status_bar_t *a,
         a->battery_percent == b->battery_percent &&
         a->battery_external_power == b->battery_external_power &&
         a->ble_connected == b->ble_connected &&
+        a->ble_scanning == b->ble_scanning &&
         a->wifi_started == b->wifi_started &&
         a->wifi_connected == b->wifi_connected &&
         a->wifi_has_ip == b->wifi_has_ip &&
@@ -955,6 +956,16 @@ void solar_os_terminal_set_status_bar(solar_os_terminal_t *terminal,
 
     terminal->status_bar = *status;
     solar_os_terminal_mark_dirty(terminal);
+}
+
+void solar_os_terminal_get_status_bar(const solar_os_terminal_t *terminal,
+                                      solar_os_status_bar_t *status)
+{
+    if (terminal == NULL || status == NULL) {
+        return;
+    }
+
+    *status = terminal->status_bar;
 }
 
 size_t solar_os_terminal_cursor_col(const solar_os_terminal_t *terminal)
@@ -1737,7 +1748,11 @@ static void terminal_draw_plug_icon(u8g2_t *u8g2, int x, int y)
     u8g2_DrawHLine(u8g2, (u8g2_uint_t)(x + 15), (u8g2_uint_t)(y + 11), 4);
 }
 
-static void terminal_draw_keyboard_icon(u8g2_t *u8g2, int x, int y, bool connected)
+static void terminal_draw_keyboard_icon(u8g2_t *u8g2,
+                                        int x,
+                                        int y,
+                                        bool connected,
+                                        bool scanning)
 {
     u8g2_DrawFrame(u8g2, (u8g2_uint_t)x, (u8g2_uint_t)(y + 1), 18, 10);
     u8g2_DrawHLine(u8g2, (u8g2_uint_t)(x + 2), (u8g2_uint_t)(y + 4), 14);
@@ -1748,7 +1763,10 @@ static void terminal_draw_keyboard_icon(u8g2_t *u8g2, int x, int y, bool connect
     }
     u8g2_DrawBox(u8g2, (u8g2_uint_t)(x + 5), (u8g2_uint_t)(y + 9), 8, 1);
 
-    if (!connected) {
+    if (scanning) {
+        u8g2_DrawFrame(u8g2, (u8g2_uint_t)(x + 15), (u8g2_uint_t)y, 4, 4);
+        terminal_draw_diag_down(u8g2, x + 18, y + 3, 4, 4);
+    } else if (!connected) {
         terminal_draw_status_slash(u8g2, x + 1, y + 2, 16, 8);
     }
 }
@@ -1891,7 +1909,7 @@ static void terminal_draw_status_bar(solar_os_terminal_t *terminal, u8g2_t *u8g2
         terminal_draw_battery_icon(u8g2, x, icon_y, status->battery_valid, status->battery_percent);
     }
     x += 28;
-    terminal_draw_keyboard_icon(u8g2, x, icon_y, status->ble_connected);
+    terminal_draw_keyboard_icon(u8g2, x, icon_y, status->ble_connected, status->ble_scanning);
     x += 26;
     terminal_draw_wifi_icon(u8g2,
                             x,

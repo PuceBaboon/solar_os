@@ -186,6 +186,7 @@ static const char * const setterm_subcommands[] = {
 static const char * const ble_subcommands[] = {
     "status",
     "scan",
+    "pair",
     "forget",
 };
 

@@ -29,6 +29,7 @@ typedef struct {
     uint8_t battery_percent;
     bool battery_external_power;
     bool ble_connected;
+    bool ble_scanning;
     bool wifi_started;
     bool wifi_connected;
     bool wifi_has_ip;
@@ -62,6 +63,8 @@ void solar_os_terminal_writeln_bold(solar_os_terminal_t *terminal, const char *t
 void solar_os_terminal_printf_bold(solar_os_terminal_t *terminal, const char *fmt, ...);
 void solar_os_terminal_set_status_bar(solar_os_terminal_t *terminal,
                                       const solar_os_status_bar_t *status);
+void solar_os_terminal_get_status_bar(const solar_os_terminal_t *terminal,
+                                      solar_os_status_bar_t *status);
 size_t solar_os_terminal_cursor_row(const solar_os_terminal_t *terminal);
 size_t solar_os_terminal_cursor_col(const solar_os_terminal_t *terminal);
 size_t solar_os_terminal_rows(const solar_os_terminal_t *terminal);
