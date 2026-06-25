@@ -145,6 +145,7 @@ static const shell_command_t shell_builtin_commands[] = {
     {"daq", "capture data streams", solar_os_shell_cmd_daq},
     {"log", "show SolarOS logs", solar_os_shell_cmd_log},
     {"port", "show byte-stream ports", solar_os_shell_cmd_port},
+    {"xfer", "transfer files over byte-stream ports", solar_os_shell_cmd_xfer},
     {"df", "show SD card free space", solar_os_shell_cmd_df},
     {"sd", "SD card control", solar_os_shell_cmd_sd},
     {"top", "show task resource usage", solar_os_shell_cmd_top},
@@ -303,6 +304,25 @@ static const char * const port_subcommands[] = {
     "list",
     "status",
 };
+
+static const char * const xfer_subcommands[] = {
+    "send",
+    "recv",
+    "receive",
+    "protocols",
+};
+
+static const char * const xfer_options[] = {
+    "--raw",
+    "--protocol",
+    "--delay-ms",
+    "-d",
+    "--append",
+    "--replace",
+    "--idle-ms",
+};
+
+static const char * const xfer_protocol_values[] = {"raw", "zmodem", "kermit"};
 
 static const char * const log_subcommands[] = {
     "status",
@@ -515,6 +535,52 @@ static const char * const path_uart[] = {"uart"};
 static const char * const path_uart_mode[] = {"uart", "mode"};
 static const char * const path_port[] = {"port"};
 static const char * const path_port_status[] = {"port", "status"};
+static const char * const path_xfer[] = {"xfer"};
+static const char * const path_xfer_send[] = {"xfer", "send"};
+static const char * const path_xfer_recv[] = {"xfer", "recv"};
+static const char * const path_xfer_receive[] = {"xfer", "receive"};
+static const char * const path_xfer_send_port[] = {"xfer", "send", SHELL_COMPLETION_ANY};
+static const char * const path_xfer_recv_port[] = {"xfer", "recv", SHELL_COMPLETION_ANY};
+static const char * const path_xfer_receive_port[] = {"xfer", "receive", SHELL_COMPLETION_ANY};
+static const char * const path_xfer_send_port_file[] = {
+    "xfer",
+    "send",
+    SHELL_COMPLETION_ANY,
+    SHELL_COMPLETION_ANY,
+};
+static const char * const path_xfer_recv_port_file[] = {
+    "xfer",
+    "recv",
+    SHELL_COMPLETION_ANY,
+    SHELL_COMPLETION_ANY,
+};
+static const char * const path_xfer_receive_port_file[] = {
+    "xfer",
+    "receive",
+    SHELL_COMPLETION_ANY,
+    SHELL_COMPLETION_ANY,
+};
+static const char * const path_xfer_send_protocol[] = {
+    "xfer",
+    "send",
+    SHELL_COMPLETION_ANY,
+    SHELL_COMPLETION_ANY,
+    "--protocol",
+};
+static const char * const path_xfer_recv_protocol[] = {
+    "xfer",
+    "recv",
+    SHELL_COMPLETION_ANY,
+    SHELL_COMPLETION_ANY,
+    "--protocol",
+};
+static const char * const path_xfer_receive_protocol[] = {
+    "xfer",
+    "receive",
+    SHELL_COMPLETION_ANY,
+    SHELL_COMPLETION_ANY,
+    "--protocol",
+};
 static const char * const path_log[] = {"log"};
 static const char * const path_log_follow[] = {"log", "follow"};
 static const char * const path_log_level[] = {"log", "level"};
@@ -684,6 +750,19 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_STATIC(path_uart_mode, uart_mode_values),
     SHELL_COMPLETION_STATIC(path_port, port_subcommands),
     SHELL_COMPLETION_PORTS(path_port_status),
+    SHELL_COMPLETION_STATIC(path_xfer, xfer_subcommands),
+    SHELL_COMPLETION_PORTS(path_xfer_send),
+    SHELL_COMPLETION_PORTS(path_xfer_recv),
+    SHELL_COMPLETION_PORTS(path_xfer_receive),
+    SHELL_COMPLETION_PATH(path_xfer_send_port, false),
+    SHELL_COMPLETION_PATH(path_xfer_recv_port, false),
+    SHELL_COMPLETION_PATH(path_xfer_receive_port, false),
+    SHELL_COMPLETION_STATIC(path_xfer_send_port_file, xfer_options),
+    SHELL_COMPLETION_STATIC(path_xfer_recv_port_file, xfer_options),
+    SHELL_COMPLETION_STATIC(path_xfer_receive_port_file, xfer_options),
+    SHELL_COMPLETION_STATIC(path_xfer_send_protocol, xfer_protocol_values),
+    SHELL_COMPLETION_STATIC(path_xfer_recv_protocol, xfer_protocol_values),
+    SHELL_COMPLETION_STATIC(path_xfer_receive_protocol, xfer_protocol_values),
     SHELL_COMPLETION_STATIC(path_log, log_subcommands),
     SHELL_COMPLETION_STATIC(path_log_follow, log_level_values),
     SHELL_COMPLETION_STATIC(path_log_level, log_level_values),
@@ -796,6 +875,17 @@ static esp_err_t resolve_path(solar_os_context_t *ctx, const char *arg, char *pa
     }
 
     return solar_os_storage_resolve_path_at(session->cwd, arg, path, path_len);
+}
+
+esp_err_t solar_os_shell_resolve_path(solar_os_context_t *ctx,
+                                      const char *arg,
+                                      char *path,
+                                      size_t path_len)
+{
+    if (ctx == NULL || path == NULL || path_len == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return resolve_path(ctx, arg, path, path_len);
 }
 
 static bool resolve_path_for_command(solar_os_context_t *ctx,

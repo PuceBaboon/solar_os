@@ -98,6 +98,7 @@ set(SOLAR_OS_SRCS
     "services/solar_os_stream.c"
     "services/solar_os_terminal.c"
     "services/solar_os_time.c"
+    "services/solar_os_transfer.c"
     "services/solar_os_tui.c"
     "services/solar_os_uart.c"
     "services/solar_os_wifi.c"

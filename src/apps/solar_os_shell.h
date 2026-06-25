@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stddef.h>
+
 #include "solar_os.h"
 #include "solar_os_log.h"
 
@@ -22,3 +24,7 @@ bool solar_os_shell_session_event(solar_os_context_t *ctx,
 void solar_os_shell_session_prompt(solar_os_context_t *ctx, solar_os_shell_session_t *session);
 esp_err_t solar_os_shell_session_start_log_follow(solar_os_context_t *ctx,
                                                   solar_os_log_level_t level);
+esp_err_t solar_os_shell_resolve_path(solar_os_context_t *ctx,
+                                      const char *arg,
+                                      char *path,
+                                      size_t path_len);

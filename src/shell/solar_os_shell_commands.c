@@ -52,6 +52,7 @@
 #include "solar_os_keys.h"
 #include "solar_os_terminal.h"
 #include "solar_os_time.h"
+#include "solar_os_transfer.h"
 #include "solar_os_tui.h"
 #include "solar_os_uart.h"
 #include "solar_os_wifi.h"
@@ -60,6 +61,8 @@
 #define I2C_READ_MAX_LEN 32
 #define UART_READ_MAX_LEN 96
 #define UART_WRITE_MAX_LEN 128
+#define XFER_DELAY_MAX_MS 60000U
+#define XFER_IDLE_MAX_MS 86400000U
 #define PORT_LIST_MAX SOLAR_OS_PORT_MAX
 #define LOG_SHOW_DEFAULT 40
 #define SETTERM_TUI_EDIT_MAX SOLAR_OS_OTA_URL_MAX
@@ -5992,6 +5995,286 @@ void solar_os_shell_cmd_port(solar_os_context_t *ctx, int argc, char **argv)
     }
 
     port_print_usage(term);
+}
+
+typedef struct {
+    solar_os_shell_io_t *term;
+} xfer_shell_state_t;
+
+typedef struct {
+    const char *direction;
+    const char *port_name;
+    const char *path_arg;
+    solar_os_transfer_protocol_t protocol;
+    uint32_t delay_ms;
+    uint32_t idle_ms;
+    bool append;
+} xfer_command_config_t;
+
+static void xfer_print_usage(solar_os_shell_io_t *term)
+{
+    solar_os_shell_io_writeln(term, "usage:");
+    solar_os_shell_io_writeln(term, "  xfer protocols");
+    solar_os_shell_io_writeln(term, "  xfer send <port> <file> [--raw|--protocol raw] [-d ms]");
+    solar_os_shell_io_writeln(term, "  xfer recv <port> <file> [--raw|--protocol raw] [--append|--replace] [--idle-ms ms]");
+    solar_os_shell_io_writeln(term, "protocols: raw now; zmodem and kermit are reserved");
+}
+
+static void xfer_print_protocols(solar_os_shell_io_t *term)
+{
+    solar_os_shell_io_writeln(term, "raw     supported");
+    solar_os_shell_io_writeln(term, "zmodem  not implemented");
+    solar_os_shell_io_writeln(term, "kermit  not implemented");
+}
+
+static bool xfer_is_send(const char *direction)
+{
+    return strcmp(direction, "send") == 0;
+}
+
+static bool xfer_is_recv(const char *direction)
+{
+    return strcmp(direction, "recv") == 0 || strcmp(direction, "receive") == 0;
+}
+
+static bool xfer_parse_args(solar_os_shell_io_t *term,
+                            int argc,
+                            char **argv,
+                            xfer_command_config_t *config)
+{
+    memset(config, 0, sizeof(*config));
+    config->protocol = SOLAR_OS_TRANSFER_PROTOCOL_RAW;
+
+    if (argc < 2) {
+        xfer_print_usage(term);
+        return false;
+    }
+
+    config->direction = argv[1];
+    if (strcmp(argv[1], "protocols") == 0) {
+        if (argc != 2) {
+            solar_os_shell_io_writeln(term, "usage: xfer protocols");
+            return false;
+        }
+        return true;
+    }
+
+    if (!xfer_is_send(config->direction) && !xfer_is_recv(config->direction)) {
+        xfer_print_usage(term);
+        return false;
+    }
+    if (argc < 4) {
+        xfer_print_usage(term);
+        return false;
+    }
+
+    config->port_name = argv[2];
+    config->path_arg = argv[3];
+
+    for (int i = 4; i < argc; i++) {
+        if (strcmp(argv[i], "--raw") == 0) {
+            config->protocol = SOLAR_OS_TRANSFER_PROTOCOL_RAW;
+        } else if (strcmp(argv[i], "--zmodem") == 0) {
+            config->protocol = SOLAR_OS_TRANSFER_PROTOCOL_ZMODEM;
+        } else if (strcmp(argv[i], "--kermit") == 0) {
+            config->protocol = SOLAR_OS_TRANSFER_PROTOCOL_KERMIT;
+        } else if (strcmp(argv[i], "--protocol") == 0) {
+            if (i + 1 >= argc ||
+                !solar_os_transfer_parse_protocol(argv[++i], &config->protocol)) {
+                solar_os_shell_io_writeln(term, "xfer protocol: raw zmodem kermit");
+                return false;
+            }
+        } else if (strcmp(argv[i], "-d") == 0 || strcmp(argv[i], "--delay-ms") == 0) {
+            size_t parsed = 0;
+            if (i + 1 >= argc || !parse_size_arg(argv[++i], 0, XFER_DELAY_MAX_MS, &parsed)) {
+                solar_os_shell_io_printf(term,
+                                         "xfer delay: 0..%u ms\n",
+                                         (unsigned)XFER_DELAY_MAX_MS);
+                return false;
+            }
+            config->delay_ms = (uint32_t)parsed;
+        } else if (strcmp(argv[i], "--idle-ms") == 0) {
+            size_t parsed = 0;
+            if (i + 1 >= argc || !parse_size_arg(argv[++i], 0, XFER_IDLE_MAX_MS, &parsed)) {
+                solar_os_shell_io_printf(term,
+                                         "xfer idle timeout: 0..%u ms\n",
+                                         (unsigned)XFER_IDLE_MAX_MS);
+                return false;
+            }
+            config->idle_ms = (uint32_t)parsed;
+        } else if (strcmp(argv[i], "--append") == 0) {
+            config->append = true;
+        } else if (strcmp(argv[i], "--replace") == 0) {
+            config->append = false;
+        } else {
+            solar_os_shell_io_printf(term, "xfer: unknown option: %s\n", argv[i]);
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool xfer_read_cancel_key(void *user)
+{
+    xfer_shell_state_t *state = (xfer_shell_state_t *)user;
+    char chars[8];
+    size_t count;
+
+    while ((count = solar_os_ble_keyboard_read_chars(chars, sizeof(chars))) > 0) {
+        for (size_t i = 0; i < count; i++) {
+            if ((uint8_t)chars[i] == SOLAR_OS_KEY_APP_EXIT) {
+                return true;
+            }
+        }
+    }
+
+    solar_os_shell_io_t *term = state != NULL ? state->term : NULL;
+    if (term == NULL ||
+        solar_os_shell_io_kind(term) != SOLAR_OS_SHELL_IO_KIND_PORT ||
+        !solar_os_port_handle_valid(&term->port)) {
+        return false;
+    }
+
+    uint8_t port_chars[8];
+    do {
+        count = 0;
+        if (solar_os_port_read(&term->port,
+                               port_chars,
+                               sizeof(port_chars),
+                               0,
+                               &count) != ESP_OK) {
+            return false;
+        }
+        for (size_t i = 0; i < count; i++) {
+            if (port_chars[i] == 0x1d || port_chars[i] == SOLAR_OS_KEY_APP_EXIT) {
+                return true;
+            }
+        }
+    } while (count > 0);
+
+    return false;
+}
+
+static void xfer_progress(uint64_t bytes, void *user)
+{
+    xfer_shell_state_t *state = (xfer_shell_state_t *)user;
+    if (state == NULL || state->term == NULL) {
+        return;
+    }
+    solar_os_shell_io_printf(state->term, "xfer: %" PRIu64 " bytes\n", bytes);
+    solar_os_shell_io_flush(state->term);
+}
+
+static void xfer_print_error(solar_os_shell_io_t *term,
+                             const xfer_command_config_t *config,
+                             esp_err_t err)
+{
+    if (err == ESP_ERR_INVALID_STATE && config != NULL && config->port_name != NULL) {
+        solar_os_port_info_t info;
+        if (solar_os_port_get_info(config->port_name, &info) == ESP_OK && info.claimed) {
+            solar_os_shell_io_printf(term,
+                                     "xfer: port %s owned by %s\n",
+                                     config->port_name,
+                                     info.owner);
+            return;
+        }
+    }
+
+    if (err == ESP_ERR_NOT_FOUND && config != NULL && config->port_name != NULL) {
+        solar_os_port_info_t info;
+        if (solar_os_port_get_info(config->port_name, &info) == ESP_ERR_NOT_FOUND) {
+            solar_os_shell_io_printf(term, "xfer: port not found: %s\n", config->port_name);
+            return;
+        }
+        solar_os_shell_io_printf(term, "xfer: file not found: %s\n", config->path_arg);
+        return;
+    }
+
+    if (err == ESP_ERR_NOT_SUPPORTED) {
+        solar_os_shell_io_writeln(term, "xfer: protocol or port capability not supported");
+        return;
+    }
+
+    if (err == ESP_ERR_INVALID_ARG) {
+        xfer_print_usage(term);
+        return;
+    }
+
+    solar_os_shell_io_printf(term, "xfer failed: %s\n", esp_err_to_name(err));
+}
+
+void solar_os_shell_cmd_xfer(solar_os_context_t *ctx, int argc, char **argv)
+{
+    solar_os_shell_io_t *term = terminal(ctx);
+    xfer_command_config_t config;
+
+    if (!xfer_parse_args(term, argc, argv, &config)) {
+        return;
+    }
+
+    if (strcmp(config.direction, "protocols") == 0) {
+        xfer_print_protocols(term);
+        return;
+    }
+
+    if (config.protocol != SOLAR_OS_TRANSFER_PROTOCOL_RAW) {
+        solar_os_shell_io_printf(term,
+                                 "xfer: %s is not implemented yet\n",
+                                 solar_os_transfer_protocol_name(config.protocol));
+        return;
+    }
+
+    char path[SOLAR_OS_STORAGE_PATH_MAX];
+    const esp_err_t path_err =
+        solar_os_shell_resolve_path(ctx, config.path_arg, path, sizeof(path));
+    if (path_err != ESP_OK) {
+        solar_os_shell_io_printf(term,
+                                 "xfer: %s: %s\n",
+                                 path_err == ESP_ERR_INVALID_SIZE ? "path too long" : "invalid path",
+                                 config.path_arg);
+        return;
+    }
+
+    xfer_shell_state_t state = {
+        .term = term,
+    };
+    solar_os_transfer_options_t options = {
+        .port_name = config.port_name,
+        .path = path,
+        .protocol = config.protocol,
+        .char_delay_ms = config.delay_ms,
+        .idle_timeout_ms = config.idle_ms,
+        .append = config.append,
+        .should_cancel = xfer_read_cancel_key,
+        .progress = xfer_progress,
+        .user = &state,
+    };
+    solar_os_transfer_result_t result;
+
+    solar_os_shell_io_printf(term,
+                             "xfer %s %s %s, %s stops\n",
+                             config.direction,
+                             config.port_name,
+                             config.path_arg,
+                             solar_os_shell_io_app_exit_key(term));
+    solar_os_shell_io_flush(term);
+
+    const esp_err_t err = xfer_is_send(config.direction) ?
+        solar_os_transfer_send(&options, &result) :
+        solar_os_transfer_recv(&options, &result);
+    if (err != ESP_OK) {
+        xfer_print_error(term, &config, err);
+        return;
+    }
+
+    if (result.cancelled) {
+        solar_os_shell_io_printf(term, "xfer: stopped after %" PRIu64 " bytes\n", result.bytes);
+    } else if (result.idle_timeout) {
+        solar_os_shell_io_printf(term, "xfer: idle after %" PRIu64 " bytes\n", result.bytes);
+    } else {
+        solar_os_shell_io_printf(term, "xfer: done, %" PRIu64 " bytes\n", result.bytes);
+    }
 }
 
 static void uart_print_status(solar_os_shell_io_t *term)

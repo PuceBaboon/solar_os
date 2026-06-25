@@ -43,6 +43,7 @@ void solar_os_shell_cmd_stream(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_temperature(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_time(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_top(solar_os_context_t *ctx, int argc, char **argv);
+void solar_os_shell_cmd_xfer(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_uart(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_uptime(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_version(solar_os_context_t *ctx, int argc, char **argv);

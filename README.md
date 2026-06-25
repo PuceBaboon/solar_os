@@ -242,11 +242,15 @@ daq start /logs/env.csv temperature humidity battery --rate 60
 daq start gpio17 /logs/key.csv --changes
 daq start uart0 /logs/serial.csv --rate-ms 25
 daq start uart0 /logs/serial.bin --raw --rate-ms 25
+xfer send uart0 /logs/payload.bin --raw
+xfer recv uart0 /logs/capture.bin --raw --idle-ms 5000
 daq status
 daq stop
 ```
 
 `daq start` appends by default and writes a CSV header when creating a new CSV file. Use `--replace` to overwrite. Units are encoded in CSV column names, not repeated on every row. Each acquired row or raw byte chunk is flushed and synced to the filesystem before the job continues. `--changes` stores only changed values for single-stream CSV capture. `--raw` is byte-stream only, single-stream only, and writes received bytes directly to the file without timestamps, CSV framing, or a header.
+
+`xfer` is for explicit file transfer over byte-stream ports. Raw send/receive is supported now; ZMODEM and Kermit are reserved protocol slots. `xfer send <port> <file> --raw` writes file bytes to a port. `xfer recv <port> <file> --raw` captures bytes from a port until stopped, or until `--idle-ms` expires. Use `-d <ms>`/`--delay-ms <ms>` with `send` to pace bytes for slower targets.
 
 ## OTA Release Layout
 
