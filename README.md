@@ -52,7 +52,7 @@ Each flavor enables packages:
 - `games`: Built-in games.
 - `python`: MicroPython runtime. This currently also enables `net` because the Python module exposes network bindings.
 - `lua`: Lua runtime. This is independent of `python` and does not pull in `net`.
-- `utils`: Text editor, pagers, reader, clock, and serial terminal app.
+- `utils`: Text editor, pagers, reader, document viewer, clock, and serial terminal app.
 
 Use `pkg` on the device to see the compiled flavor and package set. `version` also prints the active flavor.
 
@@ -335,6 +335,7 @@ Applications are launched by typing their name at the shell prompt.
 - `curl`: HTTP/HTTPS GET client with redirect support and optional SD card output.
 - `edit`: Text editor for SD card files with navigation, selection, copy/cut/paste, and PSRAM buffer storage.
 - `less`: Text file pager with wrapping and search.
+- `docview`: Graphics Markdown/text viewer using the shared retained document layout engine. Use `docview <file.md|file.txt>`; arrows scroll, page keys turn pages, and `+`/`-` adjusts zoom across 12/14/16/18/20 font sizes. `.txt` files use prose paragraph flow, while `.md`/`.markdown` files use Markdown parsing. Per-file position and zoom are saved in `/.docview/positions`.
 - `notes`: Markdown checklist notes stored as `- [ ]` / `- [x]` items. Use `notes` for `/.notes/default.md` or `notes /notes/todo.md`; `Shift+Up`/`Shift+Down` reorders the selected item inside its active/done section.
 - `reader`: Text file pager that remembers per-file position and text size in `/.reader/positions`, reflows prose paragraphs across text sizes, and uses `Ctrl++` / `Ctrl-` to adjust reader text size.
 - `plot`: Graphics plotter for live scalar streams or DAQ CSV files. Use `plot temperature humidity battery --rate 1000`, `plot -f /logs/env.csv`, or `plot -f /logs/env.csv temperature humidity`; in live mode `+`/`-` adjusts the rolling time window.
@@ -421,6 +422,8 @@ src/
 The shell command parser currently lives in the shell app. Board and build configuration live in `boards/`, `platformio.ini`, `sdkconfig.defaults`, and the Waveshare board header under `include/`.
 
 The important rule is that drivers own hardware detail, services own policy, and apps and jobs use services. That lets shell commands, foreground applications, and background jobs share the same behavior for storage, terminal rendering, networking, identity, time, and input.
+
+Document-oriented apps use `services/solar_os_doc.c`, a PSRAM-first Markdown/plain-text document model with blocks, inline runs, source anchors, and retained graphics layout lines/runs. `docview` is the current graphics document app; ZIP, EPUB, RTF, and a future writer can build on the same service instead of each app inventing its own parser and layout path. The graphics font registry now has regular and bold faces across document sizes; italic font IDs exist in the API but currently fall back to the closest upright face until oblique U8g2 font arrays are added to the trimmed firmware set.
 
 SolarOS runtime roles:
 

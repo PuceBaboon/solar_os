@@ -13,6 +13,10 @@
 #define SOLAR_OS_STORAGE_MOUNT_POINT_MAX 32
 #define SOLAR_OS_STORAGE_LOGICAL_VOLUME_INVALID UINT8_MAX
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef enum {
     SOLAR_OS_STORAGE_BLOCK_DISK,
     SOLAR_OS_STORAGE_BLOCK_PARTITION,
@@ -73,3 +77,7 @@ esp_err_t solar_os_storage_rmdir(const char *path);
 esp_err_t solar_os_storage_remove(const char *path);
 esp_err_t solar_os_storage_rename(const char *old_path, const char *new_path);
 esp_err_t solar_os_storage_copy_file(const char *source_path, const char *dest_path);
+
+#ifdef __cplusplus
+}
+#endif

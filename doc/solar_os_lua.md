@@ -89,7 +89,7 @@ end
 
 ## Graphics
 
-`solaros.gfx` draws through the foreground graphics service. Colors are `WHITE`, `LIGHT`, `DARK`, `BLACK`, and `gray(level)` with `0..GRAY_MAX`. Fonts are `FONT_SMALL`, `FONT_MONO`, and `FONT_BOLD`.
+`solaros.gfx` draws through the foreground graphics service. Colors are `WHITE`, `LIGHT`, `DARK`, `BLACK`, and `gray(level)` with `0..GRAY_MAX`. Fonts are `FONT_SMALL`, `FONT_MONO`, `FONT_BOLD`, regular document fonts `FONT_MONO_12` through `FONT_MONO_20`, bold document fonts `FONT_BOLD_12` through `FONT_BOLD_20`, and matching italic/bold-italic constants. Italic constants currently map to the closest upright face in the trimmed firmware font set.
 
 Functions:
 

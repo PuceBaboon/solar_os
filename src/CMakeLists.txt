@@ -83,6 +83,7 @@ set(SOLAR_OS_SRCS
     "services/solar_os_ble_keyboard.c"
     "services/solar_os_cdc.c"
     "services/solar_os_clipboard.c"
+    "services/solar_os_doc.c"
     "services/solar_os_gfx.c"
     "services/solar_os_gpio.c"
     "services/solar_os_i2c.c"
@@ -189,6 +190,7 @@ if(SOLAR_OS_PACKAGE_UTILS)
     list(APPEND SOLAR_OS_SRCS
         "apps/solar_os_clock.c"
         "apps/solar_os_com.c"
+        "apps/solar_os_docview.c"
         "apps/solar_os_edit.c"
         "apps/solar_os_less.c"
         "apps/solar_os_notes.c"

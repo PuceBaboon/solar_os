@@ -528,6 +528,12 @@ Fonts:
 - `FONT_SMALL`
 - `FONT_MONO`
 - `FONT_BOLD`
+- `FONT_MONO_12`, `FONT_MONO_14`, `FONT_MONO_16`, `FONT_MONO_18`, `FONT_MONO_20`
+- `FONT_BOLD_12`, `FONT_BOLD_14`, `FONT_BOLD_16`, `FONT_BOLD_18`, `FONT_BOLD_20`
+- `FONT_ITALIC_12`, `FONT_ITALIC_14`, `FONT_ITALIC_16`, `FONT_ITALIC_18`, `FONT_ITALIC_20`
+- `FONT_BOLD_ITALIC_12`, `FONT_BOLD_ITALIC_14`, `FONT_BOLD_ITALIC_16`, `FONT_BOLD_ITALIC_18`, `FONT_BOLD_ITALIC_20`
+
+Italic constants currently map to the closest upright face in the trimmed firmware font set.
 
 Functions:
 

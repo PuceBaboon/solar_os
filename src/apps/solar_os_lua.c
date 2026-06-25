@@ -447,7 +447,7 @@ static solar_os_gfx_color_t solua_gfx_color_from_arg(lua_State *L, int index)
 static solar_os_gfx_font_t solua_gfx_font_from_arg(lua_State *L, int index)
 {
     const lua_Integer value = luaL_checkinteger(L, index);
-    if (value < SOLAR_OS_GFX_FONT_SMALL || value > SOLAR_OS_GFX_FONT_BOLD) {
+    if (value < SOLAR_OS_GFX_FONT_SMALL || value >= SOLAR_OS_GFX_FONT_COUNT) {
         luaL_error(L, "expected gfx font");
     }
     return (solar_os_gfx_font_t)value;
@@ -2641,6 +2641,26 @@ static void solua_open_solaros(lua_State *L)
     solua_set_int(L, mod, "FONT_SMALL", SOLAR_OS_GFX_FONT_SMALL);
     solua_set_int(L, mod, "FONT_MONO", SOLAR_OS_GFX_FONT_MONO);
     solua_set_int(L, mod, "FONT_BOLD", SOLAR_OS_GFX_FONT_BOLD);
+    solua_set_int(L, mod, "FONT_MONO_12", SOLAR_OS_GFX_FONT_MONO_12);
+    solua_set_int(L, mod, "FONT_MONO_14", SOLAR_OS_GFX_FONT_MONO_14);
+    solua_set_int(L, mod, "FONT_MONO_16", SOLAR_OS_GFX_FONT_MONO_16);
+    solua_set_int(L, mod, "FONT_MONO_18", SOLAR_OS_GFX_FONT_MONO_18);
+    solua_set_int(L, mod, "FONT_MONO_20", SOLAR_OS_GFX_FONT_MONO_20);
+    solua_set_int(L, mod, "FONT_BOLD_12", SOLAR_OS_GFX_FONT_BOLD_12);
+    solua_set_int(L, mod, "FONT_BOLD_14", SOLAR_OS_GFX_FONT_BOLD_14);
+    solua_set_int(L, mod, "FONT_BOLD_16", SOLAR_OS_GFX_FONT_BOLD_16);
+    solua_set_int(L, mod, "FONT_BOLD_18", SOLAR_OS_GFX_FONT_BOLD_18);
+    solua_set_int(L, mod, "FONT_BOLD_20", SOLAR_OS_GFX_FONT_BOLD_20);
+    solua_set_int(L, mod, "FONT_ITALIC_12", SOLAR_OS_GFX_FONT_ITALIC_12);
+    solua_set_int(L, mod, "FONT_ITALIC_14", SOLAR_OS_GFX_FONT_ITALIC_14);
+    solua_set_int(L, mod, "FONT_ITALIC_16", SOLAR_OS_GFX_FONT_ITALIC_16);
+    solua_set_int(L, mod, "FONT_ITALIC_18", SOLAR_OS_GFX_FONT_ITALIC_18);
+    solua_set_int(L, mod, "FONT_ITALIC_20", SOLAR_OS_GFX_FONT_ITALIC_20);
+    solua_set_int(L, mod, "FONT_BOLD_ITALIC_12", SOLAR_OS_GFX_FONT_BOLD_ITALIC_12);
+    solua_set_int(L, mod, "FONT_BOLD_ITALIC_14", SOLAR_OS_GFX_FONT_BOLD_ITALIC_14);
+    solua_set_int(L, mod, "FONT_BOLD_ITALIC_16", SOLAR_OS_GFX_FONT_BOLD_ITALIC_16);
+    solua_set_int(L, mod, "FONT_BOLD_ITALIC_18", SOLAR_OS_GFX_FONT_BOLD_ITALIC_18);
+    solua_set_int(L, mod, "FONT_BOLD_ITALIC_20", SOLAR_OS_GFX_FONT_BOLD_ITALIC_20);
     solua_set_int(L, mod, "KEY_UP", SOLAR_OS_KEY_UP);
     solua_set_int(L, mod, "KEY_DOWN", SOLAR_OS_KEY_DOWN);
     solua_set_int(L, mod, "KEY_LEFT", SOLAR_OS_KEY_LEFT);

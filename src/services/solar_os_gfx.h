@@ -19,6 +19,27 @@ typedef enum {
     SOLAR_OS_GFX_FONT_SMALL,
     SOLAR_OS_GFX_FONT_MONO,
     SOLAR_OS_GFX_FONT_BOLD,
+    SOLAR_OS_GFX_FONT_MONO_12,
+    SOLAR_OS_GFX_FONT_MONO_14,
+    SOLAR_OS_GFX_FONT_MONO_16,
+    SOLAR_OS_GFX_FONT_MONO_18,
+    SOLAR_OS_GFX_FONT_MONO_20,
+    SOLAR_OS_GFX_FONT_BOLD_12,
+    SOLAR_OS_GFX_FONT_BOLD_14,
+    SOLAR_OS_GFX_FONT_BOLD_16,
+    SOLAR_OS_GFX_FONT_BOLD_18,
+    SOLAR_OS_GFX_FONT_BOLD_20,
+    SOLAR_OS_GFX_FONT_ITALIC_12,
+    SOLAR_OS_GFX_FONT_ITALIC_14,
+    SOLAR_OS_GFX_FONT_ITALIC_16,
+    SOLAR_OS_GFX_FONT_ITALIC_18,
+    SOLAR_OS_GFX_FONT_ITALIC_20,
+    SOLAR_OS_GFX_FONT_BOLD_ITALIC_12,
+    SOLAR_OS_GFX_FONT_BOLD_ITALIC_14,
+    SOLAR_OS_GFX_FONT_BOLD_ITALIC_16,
+    SOLAR_OS_GFX_FONT_BOLD_ITALIC_18,
+    SOLAR_OS_GFX_FONT_BOLD_ITALIC_20,
+    SOLAR_OS_GFX_FONT_COUNT,
 } solar_os_gfx_font_t;
 
 typedef enum {
@@ -28,6 +49,10 @@ typedef enum {
 } solar_os_gfx_line_style_t;
 
 typedef struct solar_os_gfx solar_os_gfx_t;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef struct {
     int x;
@@ -63,3 +88,7 @@ void solar_os_gfx_bitmap(solar_os_gfx_t *gfx,
                          const uint8_t *bitmap);
 bool solar_os_gfx_needs_present(const solar_os_gfx_t *gfx);
 void solar_os_gfx_present(solar_os_gfx_t *gfx);
+
+#ifdef __cplusplus
+}
+#endif

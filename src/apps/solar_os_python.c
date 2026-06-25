@@ -487,7 +487,7 @@ static solar_os_gfx_color_t python_gfx_color_from_obj(mp_obj_t obj)
 static solar_os_gfx_font_t python_gfx_font_from_obj(mp_obj_t obj)
 {
     const mp_int_t value = mp_obj_get_int(obj);
-    if (value < SOLAR_OS_GFX_FONT_SMALL || value > SOLAR_OS_GFX_FONT_BOLD) {
+    if (value < SOLAR_OS_GFX_FONT_SMALL || value >= SOLAR_OS_GFX_FONT_COUNT) {
         mp_raise_ValueError(MP_ERROR_TEXT("expected gfx font"));
     }
     return (solar_os_gfx_font_t)value;
@@ -2831,6 +2831,26 @@ static void python_register_solaros_module(void)
     python_module_store(gfx, "FONT_SMALL", mp_obj_new_int(SOLAR_OS_GFX_FONT_SMALL));
     python_module_store(gfx, "FONT_MONO", mp_obj_new_int(SOLAR_OS_GFX_FONT_MONO));
     python_module_store(gfx, "FONT_BOLD", mp_obj_new_int(SOLAR_OS_GFX_FONT_BOLD));
+    python_module_store(gfx, "FONT_MONO_12", mp_obj_new_int(SOLAR_OS_GFX_FONT_MONO_12));
+    python_module_store(gfx, "FONT_MONO_14", mp_obj_new_int(SOLAR_OS_GFX_FONT_MONO_14));
+    python_module_store(gfx, "FONT_MONO_16", mp_obj_new_int(SOLAR_OS_GFX_FONT_MONO_16));
+    python_module_store(gfx, "FONT_MONO_18", mp_obj_new_int(SOLAR_OS_GFX_FONT_MONO_18));
+    python_module_store(gfx, "FONT_MONO_20", mp_obj_new_int(SOLAR_OS_GFX_FONT_MONO_20));
+    python_module_store(gfx, "FONT_BOLD_12", mp_obj_new_int(SOLAR_OS_GFX_FONT_BOLD_12));
+    python_module_store(gfx, "FONT_BOLD_14", mp_obj_new_int(SOLAR_OS_GFX_FONT_BOLD_14));
+    python_module_store(gfx, "FONT_BOLD_16", mp_obj_new_int(SOLAR_OS_GFX_FONT_BOLD_16));
+    python_module_store(gfx, "FONT_BOLD_18", mp_obj_new_int(SOLAR_OS_GFX_FONT_BOLD_18));
+    python_module_store(gfx, "FONT_BOLD_20", mp_obj_new_int(SOLAR_OS_GFX_FONT_BOLD_20));
+    python_module_store(gfx, "FONT_ITALIC_12", mp_obj_new_int(SOLAR_OS_GFX_FONT_ITALIC_12));
+    python_module_store(gfx, "FONT_ITALIC_14", mp_obj_new_int(SOLAR_OS_GFX_FONT_ITALIC_14));
+    python_module_store(gfx, "FONT_ITALIC_16", mp_obj_new_int(SOLAR_OS_GFX_FONT_ITALIC_16));
+    python_module_store(gfx, "FONT_ITALIC_18", mp_obj_new_int(SOLAR_OS_GFX_FONT_ITALIC_18));
+    python_module_store(gfx, "FONT_ITALIC_20", mp_obj_new_int(SOLAR_OS_GFX_FONT_ITALIC_20));
+    python_module_store(gfx, "FONT_BOLD_ITALIC_12", mp_obj_new_int(SOLAR_OS_GFX_FONT_BOLD_ITALIC_12));
+    python_module_store(gfx, "FONT_BOLD_ITALIC_14", mp_obj_new_int(SOLAR_OS_GFX_FONT_BOLD_ITALIC_14));
+    python_module_store(gfx, "FONT_BOLD_ITALIC_16", mp_obj_new_int(SOLAR_OS_GFX_FONT_BOLD_ITALIC_16));
+    python_module_store(gfx, "FONT_BOLD_ITALIC_18", mp_obj_new_int(SOLAR_OS_GFX_FONT_BOLD_ITALIC_18));
+    python_module_store(gfx, "FONT_BOLD_ITALIC_20", mp_obj_new_int(SOLAR_OS_GFX_FONT_BOLD_ITALIC_20));
     python_module_store(gfx, "KEY_UP", mp_obj_new_int(SOLAR_OS_KEY_UP));
     python_module_store(gfx, "KEY_DOWN", mp_obj_new_int(SOLAR_OS_KEY_DOWN));
     python_module_store(gfx, "KEY_LEFT", mp_obj_new_int(SOLAR_OS_KEY_LEFT));
