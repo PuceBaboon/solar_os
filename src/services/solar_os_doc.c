@@ -2921,7 +2921,7 @@ static void doc_render_table_grid(solar_os_gfx_t *gfx,
     const int w = view->width;
     const int h = line->height;
 
-    solar_os_gfx_set_color(gfx, block->level != 0 ? SOLAR_OS_GFX_COLOR_LIGHT : SOLAR_OS_GFX_COLOR_WHITE);
+    solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_WHITE);
     solar_os_gfx_fill_rect(gfx, x, y, w, h);
     solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_BLACK);
     solar_os_gfx_rect(gfx, x, y, w, h);
@@ -2958,7 +2958,7 @@ static void doc_render_image_block(solar_os_gfx_t *gfx,
         return;
     }
 
-    solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_LIGHT);
+    solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_WHITE);
     solar_os_gfx_fill_rect(gfx, x, y, box_w, box_h);
     solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_BLACK);
     solar_os_gfx_rect(gfx, x, y, box_w, box_h);
@@ -3006,8 +3006,6 @@ static void doc_render_line_decor(solar_os_gfx_t *gfx,
         doc_render_table_grid(gfx, doc, line, view);
         break;
     case SOLAR_OS_DOC_BLOCK_PRE:
-        solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_LIGHT);
-        solar_os_gfx_fill_rect(gfx, view->x, screen_y, view->width, line->height);
         if (doc_layout_is_first_line_of_block(layout, line_index)) {
             int bx = 0;
             int by = 0;
@@ -3016,7 +3014,7 @@ static void doc_render_line_decor(solar_os_gfx_t *gfx,
             if (doc_layout_block_bounds(layout, line->block_index, &bx, &by, &bw, &bh)) {
                 const int x = view->x + bx - 3;
                 const int y = view->y + by - view->scroll_y - 2;
-                solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_LIGHT);
+                solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_WHITE);
                 solar_os_gfx_fill_rect(gfx, x, y, view->width - bx, bh + 4);
                 solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_DARK);
                 solar_os_gfx_rect(gfx, x, y, view->width - bx, bh + 4);
@@ -3098,7 +3096,7 @@ void solar_os_doc_layout_render(solar_os_gfx_t *gfx,
             if ((run->style & SOLAR_OS_DOC_RUN_CODE) != 0 &&
                 doc->blocks[run->block_index].type != SOLAR_OS_DOC_BLOCK_PRE &&
                 run->width > 0) {
-                solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_LIGHT);
+                solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_WHITE);
                 solar_os_gfx_fill_rect(gfx,
                                        draw_x - 1,
                                        draw_y + 1,
