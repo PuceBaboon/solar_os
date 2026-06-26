@@ -11,34 +11,48 @@ The generator expects these exact source face filenames in this directory:
 - `Bold.ttf`
 - `BoldItalic.ttf`
 
-Generate BDF files and a preview image:
-
-```sh
-python3 fonts/generate_u8g2_fonts.py
-```
-
-The default output is written below `fonts/build/`:
-
-- `bdf/` - monochrome fixed-cell BDF files
-- `preview/default_preview.png` - enlarged bitmap preview
-- `manifest.json` - generated metrics and filenames
-
 Build the vendored `bdfconv` tool:
 
 ```sh
 make -C fonts/tools/bdfconv
 ```
 
-With `bdfconv` built, the same script can generate U8g2 C arrays:
+Generate the default U8g2 C arrays, BDF files, and preview image:
 
 ```sh
 python3 fonts/generate_u8g2_fonts.py
 ```
 
-The generated C files will be placed in `fonts/build/u8g2/`. They are meant to
-be inspected first. Firmware builds automatically compile the generated default
-font arrays when `fonts/build/u8g2/u8g2_font_solar_os_default_r_14_tf.c`
-exists.
+The output is written below `fonts/build/`:
+
+- `bdf/` - monochrome fixed-cell BDF files
+- `u8g2/` - generated U8g2 C arrays
+- `preview/default_preview.png` - enlarged bitmap preview
+- `manifest.json` - generated metrics and filenames
+
+Default generated C arrays are committed to the repository:
+
+- `fonts/build/u8g2/u8g2_font_solar_os_default_*_tf.c`
+
+The firmware automatically compiles those arrays when
+`fonts/build/u8g2/u8g2_font_solar_os_default_r_14_tf.c` exists. Intermediate
+BDF files, previews, manifests, Python caches, and non-default generated
+experiments are ignored.
+
+To replace the default font set:
+
+1. Replace the four TTF files, keeping the exact filenames listed above.
+2. Regenerate the arrays:
+
+```sh
+make -C fonts/tools/bdfconv
+python3 fonts/generate_u8g2_fonts.py
+```
+
+3. Inspect `fonts/build/preview/default_preview.png`.
+4. Build and test `fontdemo` on the device.
+5. Commit the replacement TTF files and generated
+   `fonts/build/u8g2/u8g2_font_solar_os_default_*_tf.c` files.
 
 An external `bdfconv` can still be used explicitly:
 
@@ -61,4 +75,3 @@ python3 fonts/generate_u8g2_fonts.py --glyph-ranges 0x20-0x7e
 python3 fonts/generate_u8g2_fonts.py --antialias --threshold 160
 python3 fonts/generate_u8g2_fonts.py --no-u8g2
 ```
-
