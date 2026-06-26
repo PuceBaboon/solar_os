@@ -50,7 +50,7 @@ python3 fonts/generate_u8g2_fonts.py
 ```
 
 3. Inspect `fonts/build/preview/default_preview.png`.
-4. Build and test `fontdemo` on the device.
+4. Build and test the shell, terminal text sizes, and graphical document rendering on the device.
 5. Commit the replacement TTF files and generated
    `fonts/build/u8g2/u8g2_font_solar_os_default_*_tf.c` files.
 

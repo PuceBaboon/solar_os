@@ -5,56 +5,58 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "solar_os_fonts.h"
+
 static const uint8_t *gfx_font_data(solar_os_gfx_font_t font)
 {
     switch (font) {
     case SOLAR_OS_GFX_FONT_SMALL:
-        return u8g2_font_6x13_tf;
+        return u8g2_font_solar_os_default_r_12_tf;
     case SOLAR_OS_GFX_FONT_BOLD:
-        return u8g2_font_7x13B_tf;
+        return u8g2_font_solar_os_default_b_14_tf;
     case SOLAR_OS_GFX_FONT_MONO_12:
-        return u8g2_font_6x12_tf;
+        return u8g2_font_solar_os_default_r_12_tf;
     case SOLAR_OS_GFX_FONT_MONO_14:
-        return u8g2_font_7x13_tf;
+        return u8g2_font_solar_os_default_r_14_tf;
     case SOLAR_OS_GFX_FONT_MONO_16:
-        return u8g2_font_9x15_tf;
+        return u8g2_font_solar_os_default_r_16_tf;
     case SOLAR_OS_GFX_FONT_MONO_18:
-        return u8g2_font_9x18_tf;
+        return u8g2_font_solar_os_default_r_18_tf;
     case SOLAR_OS_GFX_FONT_MONO_20:
-        return u8g2_font_10x20_tf;
+        return u8g2_font_solar_os_default_r_20_tf;
     case SOLAR_OS_GFX_FONT_BOLD_12:
-        return u8g2_font_6x13B_tf;
+        return u8g2_font_solar_os_default_b_12_tf;
     case SOLAR_OS_GFX_FONT_BOLD_14:
-        return u8g2_font_7x13B_tf;
+        return u8g2_font_solar_os_default_b_14_tf;
     case SOLAR_OS_GFX_FONT_BOLD_16:
-        return u8g2_font_9x15B_tf;
+        return u8g2_font_solar_os_default_b_16_tf;
     case SOLAR_OS_GFX_FONT_BOLD_18:
-        return u8g2_font_9x18B_tf;
+        return u8g2_font_solar_os_default_b_18_tf;
     case SOLAR_OS_GFX_FONT_BOLD_20:
-        return u8g2_font_9x18B_tf;
+        return u8g2_font_solar_os_default_b_20_tf;
     case SOLAR_OS_GFX_FONT_ITALIC_12:
-        return u8g2_font_6x13_tf;
+        return u8g2_font_solar_os_default_i_12_tf;
     case SOLAR_OS_GFX_FONT_ITALIC_14:
-        return u8g2_font_7x13_tf;
+        return u8g2_font_solar_os_default_i_14_tf;
     case SOLAR_OS_GFX_FONT_ITALIC_16:
-        return u8g2_font_9x15_tf;
+        return u8g2_font_solar_os_default_i_16_tf;
     case SOLAR_OS_GFX_FONT_ITALIC_18:
-        return u8g2_font_9x18_tf;
+        return u8g2_font_solar_os_default_i_18_tf;
     case SOLAR_OS_GFX_FONT_ITALIC_20:
-        return u8g2_font_10x20_tf;
+        return u8g2_font_solar_os_default_i_20_tf;
     case SOLAR_OS_GFX_FONT_BOLD_ITALIC_12:
-        return u8g2_font_6x13B_tf;
+        return u8g2_font_solar_os_default_bi_12_tf;
     case SOLAR_OS_GFX_FONT_BOLD_ITALIC_14:
-        return u8g2_font_7x13B_tf;
+        return u8g2_font_solar_os_default_bi_14_tf;
     case SOLAR_OS_GFX_FONT_BOLD_ITALIC_16:
-        return u8g2_font_9x15B_tf;
+        return u8g2_font_solar_os_default_bi_16_tf;
     case SOLAR_OS_GFX_FONT_BOLD_ITALIC_18:
-        return u8g2_font_9x18B_tf;
+        return u8g2_font_solar_os_default_bi_18_tf;
     case SOLAR_OS_GFX_FONT_BOLD_ITALIC_20:
-        return u8g2_font_9x18B_tf;
+        return u8g2_font_solar_os_default_bi_20_tf;
     case SOLAR_OS_GFX_FONT_MONO:
     default:
-        return u8g2_font_7x13_tf;
+        return u8g2_font_solar_os_default_r_14_tf;
     }
 }
 

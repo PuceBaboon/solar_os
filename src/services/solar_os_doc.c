@@ -1780,11 +1780,11 @@ static doc_style_t doc_base_style_for(int zoom)
     }
 
     static const doc_style_t styles[] = {
-        {.font = SOLAR_OS_GFX_FONT_MONO_12, .char_w = 6, .line_h = 13, .baseline = 10, .paragraph_gap = 4, .heading_gap = 8, .block_gap = 2, .pixel_size = 12, .face = 0},
-        {.font = SOLAR_OS_GFX_FONT_MONO_14, .char_w = 7, .line_h = 15, .baseline = 12, .paragraph_gap = 5, .heading_gap = 9, .block_gap = 3, .pixel_size = 14, .face = 0},
-        {.font = SOLAR_OS_GFX_FONT_MONO_16, .char_w = 9, .line_h = 17, .baseline = 14, .paragraph_gap = 7, .heading_gap = 12, .block_gap = 4, .pixel_size = 16, .face = 0},
-        {.font = SOLAR_OS_GFX_FONT_MONO_18, .char_w = 9, .line_h = 20, .baseline = 17, .paragraph_gap = 9, .heading_gap = 15, .block_gap = 5, .pixel_size = 18, .face = 0},
-        {.font = SOLAR_OS_GFX_FONT_MONO_20, .char_w = 10, .line_h = 22, .baseline = 19, .paragraph_gap = 11, .heading_gap = 18, .block_gap = 6, .pixel_size = 20, .face = 0},
+        {.font = SOLAR_OS_GFX_FONT_MONO_12, .char_w = 6, .line_h = 14, .baseline = 10, .paragraph_gap = 4, .heading_gap = 8, .block_gap = 2, .pixel_size = 12, .face = 0},
+        {.font = SOLAR_OS_GFX_FONT_MONO_14, .char_w = 7, .line_h = 16, .baseline = 12, .paragraph_gap = 5, .heading_gap = 9, .block_gap = 3, .pixel_size = 14, .face = 0},
+        {.font = SOLAR_OS_GFX_FONT_MONO_16, .char_w = 8, .line_h = 18, .baseline = 14, .paragraph_gap = 7, .heading_gap = 12, .block_gap = 4, .pixel_size = 16, .face = 0},
+        {.font = SOLAR_OS_GFX_FONT_MONO_18, .char_w = 9, .line_h = 20, .baseline = 15, .paragraph_gap = 9, .heading_gap = 15, .block_gap = 5, .pixel_size = 18, .face = 0},
+        {.font = SOLAR_OS_GFX_FONT_MONO_20, .char_w = 10, .line_h = 22, .baseline = 17, .paragraph_gap = 11, .heading_gap = 18, .block_gap = 6, .pixel_size = 20, .face = 0},
     };
     doc_style_t style = styles[zoom];
     return style;

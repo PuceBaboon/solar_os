@@ -21,10 +21,8 @@ endif()
 set(SOLAR_OS_GENERATED_FONT_SENTINEL
     "${SOLAR_OS_PROJECT_DIR}/fonts/build/u8g2/u8g2_font_solar_os_default_r_14_tf.c"
 )
-if(EXISTS "${SOLAR_OS_GENERATED_FONT_SENTINEL}")
-    set(SOLAR_OS_HAS_GENERATED_FONTS 1)
-else()
-    set(SOLAR_OS_HAS_GENERATED_FONTS 0)
+if(NOT EXISTS "${SOLAR_OS_GENERATED_FONT_SENTINEL}")
+    message(FATAL_ERROR "SolarOS generated default fonts missing: ${SOLAR_OS_GENERATED_FONT_SENTINEL}. Run: make -C fonts/tools/bdfconv && python3 fonts/generate_u8g2_fonts.py")
 endif()
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${SOLAR_OS_FLAVOR_INPUT}"
@@ -201,7 +199,6 @@ if(SOLAR_OS_PACKAGE_UTILS)
         "apps/solar_os_com.c"
         "apps/solar_os_docview.c"
         "apps/solar_os_edit.c"
-        "apps/solar_os_fontdemo.c"
         "apps/solar_os_less.c"
         "apps/solar_os_notes.c"
         "apps/solar_os_plot.c"
@@ -224,5 +221,4 @@ idf_component_register(
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
     SOLAR_OS_VERSION="${SOLAR_OS_VERSION}"
     SOLAR_OS_FLAVOR_STAMP="${SOLAR_OS_FLAVOR_STAMP}"
-    SOLAR_OS_HAS_GENERATED_FONTS=${SOLAR_OS_HAS_GENERATED_FONTS}
 )
