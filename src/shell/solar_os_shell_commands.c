@@ -134,6 +134,16 @@ void solar_os_shell_cmd_board(solar_os_context_t *ctx, int argc, char **argv)
     solar_os_shell_io_printf(term, "Module: %s\n", SOLAR_OS_BOARD_MODULE_NAME);
 #endif
     solar_os_shell_io_printf(term, "Capabilities: %s\n", caps);
+#if SOLAR_OS_BOARD_HAS_PSRAM
+    solar_os_shell_io_printf(term,
+                             "PSRAM: declared %u bytes, heap %u bytes\n",
+                             (unsigned)SOLAR_OS_BOARD_PSRAM_BYTES,
+                             (unsigned)heap_caps_get_total_size(MALLOC_CAP_SPIRAM));
+#else
+    solar_os_shell_io_printf(term,
+                             "PSRAM: not declared, heap %u bytes\n",
+                             (unsigned)heap_caps_get_total_size(MALLOC_CAP_SPIRAM));
+#endif
 }
 
 static void audio_print_gain(solar_os_shell_io_t *term, float gain_db);

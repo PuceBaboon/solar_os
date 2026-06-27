@@ -177,9 +177,16 @@ static void print_boot_summary(void)
                   (chip_info.features & CHIP_FEATURE_WIFI_BGN) ? "yes" : "no",
                   (chip_info.features & CHIP_FEATURE_BLE) ? "yes" : "no");
     SOLAR_OS_LOGI(TAG, "Flash: %" PRIu32 " MB", flash_size / (1024 * 1024));
+#if SOLAR_OS_BOARD_HAS_PSRAM
     SOLAR_OS_LOGI(TAG,
-                  "PSRAM heap: %u bytes",
+                  "PSRAM: declared %u bytes, heap %u bytes",
+                  (unsigned)SOLAR_OS_BOARD_PSRAM_BYTES,
                   (unsigned)heap_caps_get_total_size(MALLOC_CAP_SPIRAM));
+#else
+    SOLAR_OS_LOGI(TAG,
+                  "PSRAM: not declared, heap %u bytes",
+                  (unsigned)heap_caps_get_total_size(MALLOC_CAP_SPIRAM));
+#endif
 
     char caps[192];
     solar_os_board_capabilities_format(caps, sizeof(caps));

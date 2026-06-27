@@ -39,6 +39,8 @@ set(SOLAR_OS_BOARD_ID "esp32_s3_devkitc1_n16r8")
 set(SOLAR_OS_BOARD_NAME "Espressif ESP32-S3-DevKitC-1-N16R8")
 set(SOLAR_OS_BOARD_DEFINE "SOLAR_OS_BOARD_ESP32_S3_DEVKITC1_N16R8")
 
+set(SOLAR_OS_BOARD_HAS_PSRAM ON)
+set(SOLAR_OS_BOARD_PSRAM_BYTES 8388608)
 set(SOLAR_OS_BOARD_HAS_CDC ON)
 set(SOLAR_OS_BOARD_HAS_UART ON)
 set(SOLAR_OS_BOARD_HAS_WIFI ON)
@@ -58,6 +60,8 @@ set(SOLAR_OS_BOARD_BATTERY_DRIVER "adc")
 set(SOLAR_OS_BOARD_AUDIO_DRIVER "es8311_es7210")
 set(SOLAR_OS_BOARD_SENSOR_DRIVER "shtc3")
 
+set(SOLAR_OS_BOARD_HAS_PSRAM ON)
+set(SOLAR_OS_BOARD_PSRAM_BYTES 8388608)
 set(SOLAR_OS_BOARD_HAS_DISPLAY ON)
 set(SOLAR_OS_BOARD_HAS_GFX ON)
 set(SOLAR_OS_BOARD_HAS_CDC ON)
@@ -77,9 +81,9 @@ set(SOLAR_OS_BOARD_HAS_TEMPERATURE ON)
 set(SOLAR_OS_BOARD_HAS_HUMIDITY ON)
 ```
 
-Only enable a capability when the board header provides the required pin macros
-and the hardware has been checked. Unsupported services still compile, but their
-runtime calls return `ESP_ERR_NOT_SUPPORTED`.
+Only enable a capability when the hardware has been checked and, for pin-backed
+peripherals, the board header provides the required pin macros. Unsupported
+services still compile, but their runtime calls return `ESP_ERR_NOT_SUPPORTED`.
 
 Capabilities describe what services should exist. Driver selections describe how
 this board implements those capabilities. For example, a board with
@@ -102,6 +106,7 @@ The current capability flags are:
 
 | Flag | Meaning |
 | --- | --- |
+| `PSRAM` | External PSRAM is present and configured. `SOLAR_OS_BOARD_PSRAM_BYTES` gives the expected capacity. |
 | `DISPLAY` | Physical display driver is available. |
 | `GFX` | Foreground graphics service can draw to a display. Usually paired with `DISPLAY`. |
 | `CDC` | USB serial/JTAG CDC byte-stream port `cdc0`. |
@@ -234,6 +239,8 @@ is enabled.
 Recommended minimal capability set for a generic ESP32-S3 board:
 
 ```cmake
+set(SOLAR_OS_BOARD_HAS_PSRAM ON)
+set(SOLAR_OS_BOARD_PSRAM_BYTES 8388608)
 set(SOLAR_OS_BOARD_HAS_CDC ON)
 set(SOLAR_OS_BOARD_HAS_UART ON)
 set(SOLAR_OS_BOARD_HAS_WIFI ON)

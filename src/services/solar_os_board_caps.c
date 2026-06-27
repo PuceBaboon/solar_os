@@ -9,6 +9,7 @@ typedef struct {
 } board_capability_name_t;
 
 static const board_capability_name_t capability_names[] = {
+    {SOLAR_OS_BOARD_CAP_PSRAM, "psram"},
     {SOLAR_OS_BOARD_CAP_DISPLAY, "display"},
     {SOLAR_OS_BOARD_CAP_GFX, "gfx"},
     {SOLAR_OS_BOARD_CAP_CDC, "cdc"},
@@ -47,7 +48,8 @@ solar_os_board_capabilities_t solar_os_board_capabilities(void)
         (SOLAR_OS_BOARD_HAS_PWM ? SOLAR_OS_BOARD_CAP_PWM : 0U) |
         (SOLAR_OS_BOARD_HAS_KEY ? SOLAR_OS_BOARD_CAP_KEY : 0U) |
         (SOLAR_OS_BOARD_HAS_TEMPERATURE ? SOLAR_OS_BOARD_CAP_TEMPERATURE : 0U) |
-        (SOLAR_OS_BOARD_HAS_HUMIDITY ? SOLAR_OS_BOARD_CAP_HUMIDITY : 0U);
+        (SOLAR_OS_BOARD_HAS_HUMIDITY ? SOLAR_OS_BOARD_CAP_HUMIDITY : 0U) |
+        (SOLAR_OS_BOARD_HAS_PSRAM ? SOLAR_OS_BOARD_CAP_PSRAM : 0U);
 }
 
 bool solar_os_board_has(solar_os_board_capability_t capability)
