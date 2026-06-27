@@ -22,6 +22,7 @@ typedef struct {
     bool include_username_in_auth_status;
     bool report_password_success;
     bool report_publickey_success;
+    bool allow_unverified_host_key_without_storage;
     bool include_error_code;
     bool log_resolve;
     bool log_connect_fail;

@@ -78,6 +78,7 @@ static solar_os_ssh_transport_config_t ssh_transport_config(solar_os_ssh_session
         .status = ssh_transport_status,
         .error = ssh_transport_error,
         .report_publickey_success = true,
+        .allow_unverified_host_key_without_storage = true,
     };
 }
 

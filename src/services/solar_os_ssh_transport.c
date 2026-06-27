@@ -362,6 +362,18 @@ static esp_err_t transport_verify_host_key(const solar_os_ssh_transport_config_t
         return ESP_ERR_INVALID_ARG;
     }
 
+    if (!solar_os_storage_is_mounted() &&
+        config->allow_unverified_host_key_without_storage) {
+        transport_send_status(config, "host key not verified: no SD");
+        if (config->log_tag != NULL) {
+            SOLAR_OS_LOGW(config->log_tag,
+                          "host key not verified for %s:%" PRIu16 ": no SD storage",
+                          config->host,
+                          config->port);
+        }
+        return ESP_OK;
+    }
+
     char known_hosts_path[SOLAR_OS_STORAGE_PATH_MAX];
     esp_err_t ret = transport_make_config_file_path(config,
                                                     SOLAR_OS_SSH_TRANSPORT_KNOWN_HOSTS,
