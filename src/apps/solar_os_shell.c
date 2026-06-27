@@ -97,6 +97,7 @@ struct solar_os_shell_session {
     bool previous_key_was_tab;
     bool builtin_suppressed_prompt;
     bool prompt_on_resume;
+    bool clear_on_resume;
     bool startup_attempted;
     bool watch_active;
     bool watch_executing;
@@ -980,6 +981,7 @@ static void shell_prompt(solar_os_context_t *ctx)
     shell_session(ctx)->history_browsing = false;
     shell_session(ctx)->previous_key_was_tab = false;
     shell_session(ctx)->prompt_on_resume = false;
+    shell_session(ctx)->clear_on_resume = false;
 
     if (!shell_path_has_storage_prefix(shell_session(ctx)->cwd)) {
         shell_reset_cwd(shell_session(ctx));
@@ -4627,6 +4629,8 @@ static bool shell_execute_line(solar_os_context_t *ctx,
         const esp_err_t err = solar_os_context_request_launch(ctx, app->app, argc, launch_argv);
         if (err == ESP_OK) {
             shell_session(ctx)->prompt_on_resume = true;
+            shell_session(ctx)->clear_on_resume =
+                (app->app->flags & SOLAR_OS_APP_FLAG_RESUMABLE) == 0;
             return false;
         }
 
@@ -4842,6 +4846,7 @@ esp_err_t solar_os_shell_session_start(solar_os_context_t *ctx,
     session->previous_key_was_tab = false;
     session->builtin_suppressed_prompt = false;
     session->prompt_on_resume = false;
+    session->clear_on_resume = false;
     session->script_depth = 0;
     session->alias_depth = 0;
     session->watch_active = false;
@@ -4936,6 +4941,13 @@ static void shell_resume(solar_os_context_t *ctx)
 {
     solar_os_context_set_shell_session(ctx, &shell_display_session);
     solar_os_context_set_shell_io(ctx, &shell_display_session.io);
+    const bool preserve_terminal = solar_os_context_take_terminal_preserve(ctx);
+    if (shell_display_session.clear_on_resume && !preserve_terminal) {
+        solar_os_shell_io_clear(&shell_display_session.io);
+    } else if (preserve_terminal &&
+               solar_os_shell_io_cursor_col(&shell_display_session.io) != 0) {
+        solar_os_shell_io_newline(&shell_display_session.io);
+    }
     if (shell_display_session.prompt_on_resume) {
         shell_prompt(ctx);
     }

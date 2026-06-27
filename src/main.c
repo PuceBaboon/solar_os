@@ -135,7 +135,7 @@ static void restore_foreground_context(void);
 static void session_mark_dirty(app_session_t *session);
 static app_session_t *ensure_shell_session(void);
 static bool switch_to_session(app_session_t *session, bool show_overlay);
-static bool close_session(app_session_t *session);
+static bool close_session(app_session_t *session, bool preserve_context);
 static void session_cycle_next(void);
 
 static uint32_t millis_u32(void)
@@ -771,7 +771,7 @@ static void dispatch_session_event(app_session_t *session, const solar_os_event_
     session_prepare_context(session);
     session->app->event(&os_ctx, event);
     if (solar_os_context_take_exit_request(&os_ctx)) {
-        (void)close_session(session);
+        (void)close_session(session, false);
     }
 }
 
@@ -1448,13 +1448,23 @@ static void session_print_list_to_io(solar_os_shell_io_t *io, void *user)
     solar_os_shell_io_flush(io);
 }
 
-static bool close_session(app_session_t *session)
+static bool close_session(app_session_t *session, bool preserve_context)
 {
     if (session == NULL || !session->used || session->app == solar_os_shell_app()) {
         return false;
     }
 
     const bool was_foreground = session == foreground_session;
+    solar_os_terminal_t *previous_terminal = NULL;
+    solar_os_shell_io_t *previous_shell_io = NULL;
+    solar_os_shell_session_t *previous_shell_session = NULL;
+
+    if (preserve_context && !was_foreground) {
+        previous_terminal = terminal;
+        previous_shell_io = solar_os_context_shell_io(&os_ctx);
+        previous_shell_session = solar_os_context_shell_session(&os_ctx);
+    }
+
     if (was_foreground) {
         foreground_session = NULL;
         foreground_app = NULL;
@@ -1471,6 +1481,13 @@ static bool close_session(app_session_t *session)
 
     if (was_foreground) {
         return switch_to_session(ensure_shell_session(), false);
+    }
+    if (preserve_context) {
+        terminal = previous_terminal;
+        os_ctx.terminal = previous_terminal;
+        solar_os_context_set_shell_io(&os_ctx, previous_shell_io);
+        solar_os_context_set_shell_session(&os_ctx, previous_shell_session);
+        return true;
     }
     restore_foreground_context();
     return true;
@@ -1528,7 +1545,7 @@ static void handle_session_request(void)
                 session_prompt_if_shell_active();
                 break;
             }
-            if (close_session(session)) {
+            if (close_session(session, true)) {
                 if (io != NULL) {
                     solar_os_shell_io_printf(io, "closed session %u\n", (unsigned)session_id);
                     solar_os_shell_io_flush(io);
@@ -1575,7 +1592,7 @@ static void process_app_requests(void)
         if (foreground_session != NULL &&
             foreground_session->app != solar_os_shell_app() &&
             app_is_resumable(foreground_session->app)) {
-            (void)close_session(foreground_session);
+            (void)close_session(foreground_session, false);
         } else if (foreground_app != solar_os_shell_app()) {
             switch_to_app(solar_os_shell_app());
         }
