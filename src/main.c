@@ -955,24 +955,40 @@ static void start_headless_shell_if_needed(void)
     if (terminal != NULL) {
         return;
     }
-    if (!board_has(SOLAR_OS_BOARD_CAP_CDC)) {
-        SOLAR_OS_LOGW(TAG,
-                      "No display terminal and no CDC capability; no interactive shell started");
-        return;
-    }
 
-    char *argv[] = {
-        (char *)"shell",
-        (char *)SOLAR_OS_CDC_PORT_NAME,
+    static const struct {
+        solar_os_board_capability_t capability;
+        const char *port_name;
+    } fallback_ports[] = {
+        {SOLAR_OS_BOARD_CAP_UART, SOLAR_OS_UART_PORT_NAME},
+        {SOLAR_OS_BOARD_CAP_CDC, SOLAR_OS_CDC_PORT_NAME},
     };
-    const esp_err_t err = solar_os_jobs_start(&os_ctx, "shell", 2, argv);
-    if (err == ESP_OK) {
-        SOLAR_OS_LOGI(TAG, "Headless shell started on %s", SOLAR_OS_CDC_PORT_NAME);
-    } else {
+
+    bool had_candidate = false;
+    for (size_t i = 0; i < sizeof(fallback_ports) / sizeof(fallback_ports[0]); i++) {
+        if (!board_has(fallback_ports[i].capability)) {
+            continue;
+        }
+        had_candidate = true;
+
+        char *argv[] = {
+            (char *)"shell",
+            (char *)fallback_ports[i].port_name,
+        };
+        const esp_err_t err = solar_os_jobs_start(&os_ctx, "shell", 2, argv);
+        if (err == ESP_OK) {
+            SOLAR_OS_LOGI(TAG, "Headless shell started on %s", fallback_ports[i].port_name);
+            return;
+        }
         SOLAR_OS_LOGW(TAG,
                       "Headless shell on %s failed: %s",
-                      SOLAR_OS_CDC_PORT_NAME,
+                      fallback_ports[i].port_name,
                       esp_err_to_name(err));
+    }
+
+    if (!had_candidate) {
+        SOLAR_OS_LOGW(TAG,
+                      "No display terminal and no byte-stream capability; no interactive shell started");
     }
 }
 
