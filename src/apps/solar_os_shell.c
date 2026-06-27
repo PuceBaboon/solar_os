@@ -975,6 +975,7 @@ static void shell_prompt(solar_os_context_t *ctx)
     shell_format_display_path(shell_session(ctx)->cwd, display_path, sizeof(display_path));
     solar_os_identity_format(identity, sizeof(identity));
     snprintf(prompt, sizeof(prompt), "%s:%s ", identity, display_path);
+    solar_os_shell_io_set_cursor_visible(io, true);
     solar_os_shell_io_write_bold(io, prompt);
     shell_session(ctx)->input_row = solar_os_shell_io_cursor_row(io);
     shell_session(ctx)->input_col = solar_os_shell_io_cursor_col(io);

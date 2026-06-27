@@ -4604,23 +4604,53 @@ void solar_os_shell_cmd_wifi(solar_os_context_t *ctx, int argc, char **argv)
 static void ping_print_usage(solar_os_shell_io_t *term)
 {
     solar_os_shell_io_writeln(term, "usage: ping <host> [count]");
-    solar_os_shell_io_writeln(term, "ESC stops a running ping");
+    solar_os_shell_io_printf(term,
+                             "%s stops a running ping\n",
+                             solar_os_shell_io_kind(term) == SOLAR_OS_SHELL_IO_KIND_PORT ?
+                                 "ESC or Ctrl+]" :
+                                 "ESC");
 }
 
 static bool shell_read_escape_key(void *user)
 {
+    solar_os_shell_io_t *term = (solar_os_shell_io_t *)user;
     char chars[8];
     size_t count;
 
-    (void)user;
-
     while ((count = solar_os_ble_keyboard_read_chars(chars, sizeof(chars))) > 0) {
         for (size_t i = 0; i < count; i++) {
-            if (chars[i] == SOLAR_OS_KEY_ESCAPE) {
+            const uint8_t ch = (uint8_t)chars[i];
+            if (ch == SOLAR_OS_KEY_ESCAPE || ch == SOLAR_OS_KEY_APP_EXIT) {
                 return true;
             }
         }
     }
+
+    if (term == NULL ||
+        solar_os_shell_io_kind(term) != SOLAR_OS_SHELL_IO_KIND_PORT ||
+        !solar_os_port_handle_valid(&term->port)) {
+        return false;
+    }
+
+    uint8_t port_chars[8];
+    do {
+        count = 0;
+        const esp_err_t err = solar_os_port_read(&term->port,
+                                                 port_chars,
+                                                 sizeof(port_chars),
+                                                 0,
+                                                 &count);
+        if (err != ESP_OK) {
+            return false;
+        }
+        for (size_t i = 0; i < count; i++) {
+            if (port_chars[i] == SOLAR_OS_KEY_ESCAPE ||
+                port_chars[i] == 0x1d ||
+                port_chars[i] == SOLAR_OS_KEY_APP_EXIT) {
+                return true;
+            }
+        }
+    } while (count > 0);
 
     return false;
 }
@@ -4675,7 +4705,12 @@ void solar_os_shell_cmd_ping(solar_os_context_t *ctx, int argc, char **argv)
     solar_os_net_ping_result_t result;
 
     if (count == SOLAR_OS_NET_PING_FOREVER) {
-        solar_os_shell_io_printf(term, "ping %s, ESC to stop\n", host);
+        solar_os_shell_io_printf(term,
+                                 "ping %s, %s to stop\n",
+                                 host,
+                                 solar_os_shell_io_kind(term) == SOLAR_OS_SHELL_IO_KIND_PORT ?
+                                     "ESC/Ctrl+]" :
+                                     "ESC");
     } else {
         solar_os_shell_io_printf(term, "ping %s (%u packets)\n", host, (unsigned)count);
     }
@@ -4686,7 +4721,7 @@ void solar_os_shell_cmd_ping(solar_os_context_t *ctx, int argc, char **argv)
                                             ping_print_event,
                                             term,
                                             shell_read_escape_key,
-                                            NULL,
+                                            term,
                                             &result);
     if (err == ESP_ERR_INVALID_STATE) {
         solar_os_shell_io_writeln(term, "ping: WiFi not connected");
@@ -5197,12 +5232,15 @@ void solar_os_shell_cmd_netscan(solar_os_context_t *ctx, int argc, char **argv)
     char first_ip[SOLAR_OS_NET_ADDR_MAX];
     netscan_target_ip(&target, 0, first_ip, sizeof(first_ip));
     solar_os_shell_io_printf(term,
-                             "netscan %s (%s), %u host%s, %u ports, ESC to stop\n",
+                             "netscan %s (%s), %u host%s, %u ports, %s to stop\n",
                              target.label,
                              first_ip,
                              (unsigned)target.count,
                              target.count == 1 ? "" : "s",
-                             (unsigned)port_count);
+                             (unsigned)port_count,
+                             solar_os_shell_io_kind(term) == SOLAR_OS_SHELL_IO_KIND_PORT ?
+                                 "ESC/Ctrl+]" :
+                                 "ESC");
     solar_os_shell_io_writeln(term, "HOST             PORT     STATE  SERVICE");
     solar_os_shell_io_flush(term);
 
@@ -5218,7 +5256,7 @@ void solar_os_shell_cmd_netscan(solar_os_context_t *ctx, int argc, char **argv)
         netscan_target_ip(&target, host_index, ip, sizeof(ip));
 
         for (size_t port_index = 0; port_index < port_count; port_index++) {
-            if (shell_read_escape_key(NULL)) {
+            if (shell_read_escape_key(term)) {
                 stopped = true;
                 break;
             }

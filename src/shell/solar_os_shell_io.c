@@ -164,6 +164,23 @@ void solar_os_shell_io_init_port(solar_os_shell_io_t *io,
     io->port = port != NULL ? *port : (solar_os_port_handle_t)SOLAR_OS_PORT_HANDLE_INIT;
     io->cols = shell_io_nonzero_or_default(cols, SHELL_IO_DEFAULT_COLS);
     io->rows = shell_io_nonzero_or_default(rows, SHELL_IO_DEFAULT_ROWS);
+    io->cursor_visible = true;
+}
+
+void solar_os_shell_io_set_dimensions(solar_os_shell_io_t *io, uint16_t cols, uint16_t rows)
+{
+    if (io == NULL || io->kind != SOLAR_OS_SHELL_IO_KIND_PORT) {
+        return;
+    }
+
+    io->cols = shell_io_nonzero_or_default(cols, SHELL_IO_DEFAULT_COLS);
+    io->rows = shell_io_nonzero_or_default(rows, SHELL_IO_DEFAULT_ROWS);
+    if (io->cols > 0 && io->cursor_col >= io->cols) {
+        io->cursor_col = io->cols - 1U;
+    }
+    if (io->rows > 0 && io->cursor_row >= io->rows) {
+        io->cursor_row = io->rows - 1U;
+    }
 }
 
 solar_os_shell_io_kind_t solar_os_shell_io_kind(const solar_os_shell_io_t *io)

@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "freertos/FreeRTOS.h"
@@ -22,6 +23,12 @@
 #define SHELL_JOB_TICK_MS 100U
 #define SHELL_JOB_DEFAULT_COLS 80
 #define SHELL_JOB_DEFAULT_ROWS 24
+#define SHELL_JOB_SIZE_PROBE_TIMEOUT_MS 200U
+#define SHELL_JOB_SIZE_PROBE_READ_MS 25U
+#define SHELL_JOB_SIZE_PROBE_MIN_COLS 20U
+#define SHELL_JOB_SIZE_PROBE_MIN_ROWS 8U
+#define SHELL_JOB_SIZE_PROBE_MAX_COLS 300U
+#define SHELL_JOB_SIZE_PROBE_MAX_ROWS 120U
 
 static const char *TAG = "solar_os_shell_job";
 
@@ -64,6 +71,106 @@ static void shell_job_owner(const shell_job_state_t *state, char *owner, size_t 
 static const solar_os_app_t *shell_job_foreground_app(shell_job_state_t *state)
 {
     return state != NULL ? solar_os_shell_session_foreground_app(state->session) : NULL;
+}
+
+static bool shell_job_parse_size_report(const uint8_t *data,
+                                        size_t len,
+                                        uint16_t *rows,
+                                        uint16_t *cols)
+{
+    if (data == NULL || rows == NULL || cols == NULL) {
+        return false;
+    }
+
+    for (size_t i = 0; i + 3U < len; i++) {
+        if (data[i] != 0x1b || data[i + 1U] != '[') {
+            continue;
+        }
+
+        size_t pos = i + 2U;
+        unsigned parsed_rows = 0;
+        unsigned parsed_cols = 0;
+        bool have_rows = false;
+        bool have_cols = false;
+
+        while (pos < len && data[pos] >= '0' && data[pos] <= '9') {
+            have_rows = true;
+            parsed_rows = (parsed_rows * 10U) + (unsigned)(data[pos] - '0');
+            pos++;
+        }
+        if (!have_rows || pos >= len || data[pos] != ';') {
+            continue;
+        }
+        pos++;
+        while (pos < len && data[pos] >= '0' && data[pos] <= '9') {
+            have_cols = true;
+            parsed_cols = (parsed_cols * 10U) + (unsigned)(data[pos] - '0');
+            pos++;
+        }
+        if (!have_cols || pos >= len || data[pos] != 'R') {
+            continue;
+        }
+        if (parsed_cols < SHELL_JOB_SIZE_PROBE_MIN_COLS ||
+            parsed_rows < SHELL_JOB_SIZE_PROBE_MIN_ROWS ||
+            parsed_cols > SHELL_JOB_SIZE_PROBE_MAX_COLS ||
+            parsed_rows > SHELL_JOB_SIZE_PROBE_MAX_ROWS) {
+            continue;
+        }
+
+        *rows = (uint16_t)parsed_rows;
+        *cols = (uint16_t)parsed_cols;
+        return true;
+    }
+
+    return false;
+}
+
+static void shell_job_probe_terminal_size(shell_job_state_t *state)
+{
+    uint8_t response[48];
+    size_t response_len = 0;
+    uint16_t rows = 0;
+    uint16_t cols = 0;
+
+    if (state == NULL || state->session == NULL ||
+        !solar_os_port_handle_valid(&state->port)) {
+        return;
+    }
+
+    solar_os_shell_io_t *io = solar_os_shell_session_io(state->session);
+    if (io == NULL || solar_os_shell_io_kind(io) != SOLAR_OS_SHELL_IO_KIND_PORT) {
+        return;
+    }
+
+    const char probe[] = "\x1b[?25h\x1b[999;999H\x1b[6n";
+    (void)solar_os_shell_io_write_raw(io, probe, sizeof(probe) - 1U);
+
+    const uint32_t start_ms = shell_job_now_ms();
+    while ((uint32_t)(shell_job_now_ms() - start_ms) < SHELL_JOB_SIZE_PROBE_TIMEOUT_MS &&
+           response_len < sizeof(response)) {
+        size_t read_len = 0;
+        const esp_err_t err = solar_os_port_read(&state->port,
+                                                 response + response_len,
+                                                 sizeof(response) - response_len,
+                                                 SHELL_JOB_SIZE_PROBE_READ_MS,
+                                                 &read_len);
+        if (err == ESP_OK && read_len > 0) {
+            response_len += read_len;
+            if (shell_job_parse_size_report(response, response_len, &rows, &cols)) {
+                solar_os_shell_io_set_dimensions(io, cols, rows);
+                SOLAR_OS_LOGI(TAG,
+                              "terminal size on %s: %ux%u",
+                              state->port_name,
+                              (unsigned)cols,
+                              (unsigned)rows);
+                return;
+            }
+            continue;
+        }
+        if (err != ESP_OK && err != ESP_ERR_TIMEOUT) {
+            return;
+        }
+    }
 }
 
 static void shell_job_release_foreground_app(shell_job_state_t *state, const solar_os_app_t *app)
@@ -255,6 +362,7 @@ static void shell_job_task(void *arg)
     uint32_t last_input_ms = last_tick_ms;
 
     solar_os_vt100_input_init(&state->input);
+    shell_job_probe_terminal_size(state);
 
     esp_err_t err = solar_os_shell_session_start(&state->ctx,
                                                  state->session,

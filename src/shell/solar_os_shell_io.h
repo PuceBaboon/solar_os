@@ -33,6 +33,7 @@ void solar_os_shell_io_init_port(solar_os_shell_io_t *io,
                                  const solar_os_port_handle_t *port,
                                  uint16_t cols,
                                  uint16_t rows);
+void solar_os_shell_io_set_dimensions(solar_os_shell_io_t *io, uint16_t cols, uint16_t rows);
 solar_os_shell_io_kind_t solar_os_shell_io_kind(const solar_os_shell_io_t *io);
 solar_os_terminal_t *solar_os_shell_io_terminal(solar_os_shell_io_t *io);
 const char *solar_os_shell_io_app_exit_key(const solar_os_shell_io_t *io);
