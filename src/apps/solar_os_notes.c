@@ -53,6 +53,8 @@ typedef struct {
     notes_input_mode_t input_mode;
     char input[NOTES_TEXT_MAX];
     size_t input_len;
+    size_t input_cursor;
+    size_t input_view_offset;
 } notes_state_t;
 
 static notes_state_t notes;
@@ -287,6 +289,19 @@ static void notes_write_clipped(solar_os_shell_io_t *io, const char *text, size_
     }
 }
 
+static void notes_input_ensure_visible(size_t width)
+{
+    if (width == 0) {
+        notes.input_view_offset = notes.input_cursor;
+        return;
+    }
+    if (notes.input_cursor < notes.input_view_offset) {
+        notes.input_view_offset = notes.input_cursor;
+    } else if (notes.input_cursor > notes.input_view_offset + width) {
+        notes.input_view_offset = notes.input_cursor - width;
+    }
+}
+
 static void notes_render(solar_os_context_t *ctx)
 {
     solar_os_shell_io_t *io = notes_io(ctx);
@@ -358,12 +373,13 @@ static void notes_render(solar_os_context_t *ctx)
         solar_os_shell_io_write(io, label);
         const size_t label_len = strlen(label);
         const size_t input_width = cols > label_len ? cols - label_len : 0U;
-        notes_write_clipped(io, notes.input, input_width);
+        notes_input_ensure_visible(input_width);
+        notes_write_clipped(io, &notes.input[notes.input_view_offset], input_width);
         solar_os_shell_io_set_cursor(io,
                                      rows - 1U,
-                                     label_len + (notes.input_len < input_width ?
-                                         notes.input_len :
-                                         input_width));
+                                     label_len + (notes.input_cursor >= notes.input_view_offset ?
+                                         notes.input_cursor - notes.input_view_offset :
+                                         0U));
         solar_os_shell_io_set_cursor_visible(io, true);
     } else {
         notes_write_clipped(io, notes.message, cols);
@@ -467,6 +483,8 @@ static void notes_start_add(void)
     notes.input_mode = NOTES_INPUT_ADD;
     notes.input[0] = '\0';
     notes.input_len = 0;
+    notes.input_cursor = 0;
+    notes.input_view_offset = 0;
 }
 
 static void notes_start_edit(void)
@@ -477,6 +495,8 @@ static void notes_start_edit(void)
     notes.input_mode = NOTES_INPUT_EDIT;
     strlcpy(notes.input, notes.items[notes.cursor].text, sizeof(notes.input));
     notes.input_len = strlen(notes.input);
+    notes.input_cursor = notes.input_len;
+    notes.input_view_offset = 0;
 }
 
 static bool notes_is_printable(uint8_t ch)
@@ -502,31 +522,132 @@ static void notes_finish_input(void)
     notes.input_mode = NOTES_INPUT_NONE;
     notes.input[0] = '\0';
     notes.input_len = 0;
+    notes.input_cursor = 0;
+    notes.input_view_offset = 0;
+}
+
+static void notes_cancel_input(void)
+{
+    notes.input_mode = NOTES_INPUT_NONE;
+    notes.input[0] = '\0';
+    notes.input_len = 0;
+    notes.input_cursor = 0;
+    notes.input_view_offset = 0;
+    notes_set_message("cancelled");
+}
+
+static bool notes_input_word_char(char ch)
+{
+    return !isspace((unsigned char)ch);
+}
+
+static void notes_input_word_left(void)
+{
+    size_t pos = notes.input_cursor;
+    while (pos > 0 && isspace((unsigned char)notes.input[pos - 1U])) {
+        pos--;
+    }
+    while (pos > 0 && notes_input_word_char(notes.input[pos - 1U])) {
+        pos--;
+    }
+    notes.input_cursor = pos;
+}
+
+static void notes_input_word_right(void)
+{
+    size_t pos = notes.input_cursor;
+    while (pos < notes.input_len && notes_input_word_char(notes.input[pos])) {
+        pos++;
+    }
+    while (pos < notes.input_len && isspace((unsigned char)notes.input[pos])) {
+        pos++;
+    }
+    notes.input_cursor = pos;
+}
+
+static void notes_input_backspace(void)
+{
+    if (notes.input_cursor == 0 || notes.input_len == 0) {
+        return;
+    }
+    memmove(&notes.input[notes.input_cursor - 1U],
+            &notes.input[notes.input_cursor],
+            notes.input_len - notes.input_cursor + 1U);
+    notes.input_cursor--;
+    notes.input_len--;
+}
+
+static void notes_input_delete(void)
+{
+    if (notes.input_cursor >= notes.input_len) {
+        return;
+    }
+    memmove(&notes.input[notes.input_cursor],
+            &notes.input[notes.input_cursor + 1U],
+            notes.input_len - notes.input_cursor);
+    notes.input_len--;
+}
+
+static void notes_input_insert(uint8_t ch)
+{
+    if (!notes_is_printable(ch) || notes.input_len + 1U >= sizeof(notes.input)) {
+        return;
+    }
+    memmove(&notes.input[notes.input_cursor + 1U],
+            &notes.input[notes.input_cursor],
+            notes.input_len - notes.input_cursor + 1U);
+    notes.input[notes.input_cursor] = (char)ch;
+    notes.input_cursor++;
+    notes.input_len++;
 }
 
 static bool notes_handle_input(uint8_t ch)
 {
     if (ch == SOLAR_OS_KEY_ESCAPE) {
-        notes.input_mode = NOTES_INPUT_NONE;
-        notes.input[0] = '\0';
-        notes.input_len = 0;
-        notes_set_message("cancelled");
+        notes_cancel_input();
         return true;
     }
     if (ch == '\r' || ch == '\n') {
         notes_finish_input();
         return true;
     }
-    if (ch == 0x08 || ch == 0x7f) {
-        if (notes.input_len > 0) {
-            notes.input[--notes.input_len] = '\0';
+    if (ch == SOLAR_OS_KEY_LEFT) {
+        if (notes.input_cursor > 0) {
+            notes.input_cursor--;
         }
         return true;
     }
-    if (notes_is_printable(ch) && notes.input_len + 1U < sizeof(notes.input)) {
-        notes.input[notes.input_len++] = (char)ch;
-        notes.input[notes.input_len] = '\0';
+    if (ch == SOLAR_OS_KEY_RIGHT) {
+        if (notes.input_cursor < notes.input_len) {
+            notes.input_cursor++;
+        }
+        return true;
     }
+    if (ch == SOLAR_OS_KEY_CTRL_LEFT) {
+        notes_input_word_left();
+        return true;
+    }
+    if (ch == SOLAR_OS_KEY_CTRL_RIGHT) {
+        notes_input_word_right();
+        return true;
+    }
+    if (ch == SOLAR_OS_KEY_HOME) {
+        notes.input_cursor = 0;
+        return true;
+    }
+    if (ch == SOLAR_OS_KEY_END) {
+        notes.input_cursor = notes.input_len;
+        return true;
+    }
+    if (ch == SOLAR_OS_KEY_DELETE) {
+        notes_input_delete();
+        return true;
+    }
+    if (ch == 0x08 || ch == 0x7f) {
+        notes_input_backspace();
+        return true;
+    }
+    notes_input_insert(ch);
     return true;
 }
 
