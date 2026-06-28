@@ -2899,11 +2899,25 @@ static bool solua_path_has_suffix(const char *path, const char *suffix)
         strcmp(path + path_len - suffix_len, suffix) == 0;
 }
 
-static void solua_finish_terminal_line(solar_os_shell_io_t *io)
+static bool solua_display_io_hidden_by_gfx(solar_os_context_t *ctx, solar_os_shell_io_t *io)
+{
+    return solar_os_context_graphics_active(ctx) &&
+        solar_os_shell_io_kind(io) == SOLAR_OS_SHELL_IO_KIND_TERMINAL;
+}
+
+static void solua_flush_io(solar_os_context_t *ctx, solar_os_shell_io_t *io)
+{
+    if (io == NULL || solua_display_io_hidden_by_gfx(ctx, io)) {
+        return;
+    }
+    solar_os_shell_io_flush(io);
+}
+
+static void solua_finish_terminal_line(solar_os_context_t *ctx, solar_os_shell_io_t *io)
 {
     if (io != NULL && solar_os_shell_io_cursor_col(io) != 0) {
         solar_os_shell_io_newline(io);
-        solar_os_shell_io_flush(io);
+        solua_flush_io(ctx, io);
     }
 }
 
@@ -3379,13 +3393,13 @@ static void solua_drain_events(solar_os_context_t *ctx)
             solua.running = false;
             solua.task_done = true;
             if (solua.mode == SOLUA_MODE_SCRIPT || solua.repl_exit_requested) {
-                solua_finish_terminal_line(io);
+                solua_finish_terminal_line(ctx, io);
                 if (!event.success && !solua.interrupted) {
                     solar_os_shell_io_writeln(io, "lua: failed");
                 } else if (!event.success) {
                     solar_os_shell_io_writeln(io, "lua: stopped");
                 }
-                solar_os_shell_io_flush(io);
+                solua_flush_io(ctx, io);
                 solua_return_to_shell(ctx);
                 break;
             }
@@ -3396,7 +3410,7 @@ static void solua_drain_events(solar_os_context_t *ctx)
             break;
         }
     }
-    solar_os_shell_io_flush(io);
+    solua_flush_io(ctx, io);
 }
 
 static void solua_queue_script_key(char ch)

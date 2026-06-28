@@ -3109,11 +3109,25 @@ static void python_render_usage(solar_os_shell_io_t *io)
     solar_os_shell_io_flush(io);
 }
 
-static void python_finish_terminal_line(solar_os_shell_io_t *io)
+static bool python_display_io_hidden_by_gfx(solar_os_context_t *ctx, solar_os_shell_io_t *io)
+{
+    return solar_os_context_graphics_active(ctx) &&
+        solar_os_shell_io_kind(io) == SOLAR_OS_SHELL_IO_KIND_TERMINAL;
+}
+
+static void python_flush_io(solar_os_context_t *ctx, solar_os_shell_io_t *io)
+{
+    if (io == NULL || python_display_io_hidden_by_gfx(ctx, io)) {
+        return;
+    }
+    solar_os_shell_io_flush(io);
+}
+
+static void python_finish_terminal_line(solar_os_context_t *ctx, solar_os_shell_io_t *io)
 {
     if (io != NULL && solar_os_shell_io_cursor_col(io) != 0) {
         solar_os_shell_io_newline(io);
-        solar_os_shell_io_flush(io);
+        python_flush_io(ctx, io);
     }
 }
 
@@ -3633,19 +3647,19 @@ static void python_drain_events(solar_os_context_t *ctx)
             python_app.running = false;
             python_app.done = true;
             if (python_app.mode == PYTHON_MODE_SCRIPT) {
-                python_finish_terminal_line(io);
+                python_finish_terminal_line(ctx, io);
                 if (!event.success) {
                     const char *status =
                         python_app.interrupted ? "python: stopped" : "python: failed";
                     solar_os_shell_io_writeln(io, status);
                 }
-                solar_os_shell_io_flush(io);
+                python_flush_io(ctx, io);
                 python_return_to_shell(ctx);
                 break;
             }
             if (event.success && python_app.repl_exit_requested) {
-                python_finish_terminal_line(io);
-                solar_os_shell_io_flush(io);
+                python_finish_terminal_line(ctx, io);
+                python_flush_io(ctx, io);
                 python_return_to_shell(ctx);
                 break;
             }
@@ -3659,7 +3673,7 @@ static void python_drain_events(solar_os_context_t *ctx)
             break;
         }
     }
-    solar_os_shell_io_flush(io);
+    python_flush_io(ctx, io);
 }
 
 static void python_queue_script_key(char ch)
