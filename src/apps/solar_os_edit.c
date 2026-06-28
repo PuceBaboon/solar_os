@@ -13,6 +13,7 @@
 #include "solar_os_clipboard.h"
 #include "solar_os_shell_io.h"
 #include "solar_os_storage.h"
+#include "solar_os_syntax.h"
 #include "solar_os_terminal.h"
 
 #define EDITOR_BUFFER_CAPACITY (256 * 1024)
@@ -30,10 +31,20 @@ typedef struct {
     bool dirty;
     bool error_only;
     bool selection_active;
+    bool saved_text_size_valid;
+    solar_os_terminal_text_size_t saved_text_size;
+    solar_os_syntax_language_t syntax;
     char path[SOLAR_OS_STORAGE_PATH_MAX];
     char display_name[SOLAR_OS_STORAGE_PATH_MAX];
     char message[72];
 } editor_state_t;
+
+typedef struct {
+    bool bold;
+    bool italic;
+    bool underline;
+    bool inverse;
+} editor_attrs_t;
 
 static editor_state_t editor;
 static solar_os_shell_io_t editor_fallback_io;
@@ -48,6 +59,14 @@ static solar_os_shell_io_t *editor_io(solar_os_context_t *ctx)
     }
     return io;
 }
+
+static const solar_os_terminal_text_size_t editor_text_sizes[] = {
+    SOLAR_OS_TERMINAL_TEXT_SIZE_12,
+    SOLAR_OS_TERMINAL_TEXT_SIZE_14,
+    SOLAR_OS_TERMINAL_TEXT_SIZE_16,
+    SOLAR_OS_TERMINAL_TEXT_SIZE_18,
+    SOLAR_OS_TERMINAL_TEXT_SIZE_20,
+};
 
 static bool editor_is_printable(char ch)
 {
@@ -129,6 +148,70 @@ static void editor_set_message(const char *message)
     strlcpy(editor.message, message != NULL ? message : "", sizeof(editor.message));
 }
 
+static void editor_capture_text_size(solar_os_context_t *ctx)
+{
+    solar_os_terminal_t *terminal = solar_os_shell_io_terminal(editor_io(ctx));
+    if (terminal == NULL) {
+        return;
+    }
+
+    editor.saved_text_size = solar_os_terminal_text_size(terminal);
+    editor.saved_text_size_valid = true;
+}
+
+static void editor_restore_text_size(solar_os_context_t *ctx)
+{
+    if (!editor.saved_text_size_valid) {
+        return;
+    }
+
+    solar_os_terminal_t *terminal = solar_os_shell_io_terminal(editor_io(ctx));
+    if (terminal != NULL) {
+        (void)solar_os_terminal_set_text_size_transient(terminal, editor.saved_text_size);
+    }
+}
+
+static int editor_text_size_index(solar_os_terminal_text_size_t text_size)
+{
+    for (size_t i = 0; i < sizeof(editor_text_sizes) / sizeof(editor_text_sizes[0]); i++) {
+        if (editor_text_sizes[i] == text_size) {
+            return (int)i;
+        }
+    }
+    return 1;
+}
+
+static void editor_adjust_text_size(solar_os_context_t *ctx, int delta)
+{
+    solar_os_terminal_t *terminal = solar_os_shell_io_terminal(editor_io(ctx));
+    if (terminal == NULL) {
+        editor_set_message("text size display only");
+        return;
+    }
+
+    int index = editor_text_size_index(solar_os_terminal_text_size(terminal));
+    index += delta;
+    if (index < 0) {
+        index = 0;
+    } else if (index >= (int)(sizeof(editor_text_sizes) / sizeof(editor_text_sizes[0]))) {
+        index = (int)(sizeof(editor_text_sizes) / sizeof(editor_text_sizes[0])) - 1;
+    }
+
+    const solar_os_terminal_text_size_t text_size = editor_text_sizes[index];
+    const esp_err_t err = solar_os_terminal_set_text_size_transient(terminal, text_size);
+    if (err != ESP_OK) {
+        editor_set_message("text size failed");
+        return;
+    }
+
+    char message[sizeof(editor.message)];
+    snprintf(message,
+             sizeof(message),
+             "text size %s",
+             solar_os_terminal_text_size_name(text_size));
+    editor_set_message(message);
+}
+
 static bool editor_has_selection(void)
 {
     return editor.selection_active && editor.selection_anchor != editor.cursor;
@@ -201,6 +284,71 @@ static void editor_write_clipped(solar_os_shell_io_t *io,
     }
 }
 
+static void editor_apply_style(solar_os_shell_io_t *io,
+                               editor_attrs_t *attrs,
+                               solar_os_syntax_style_t style,
+                               bool inverse)
+{
+    const bool bold = style == SOLAR_OS_SYNTAX_STYLE_KEYWORD;
+    const bool underline = style == SOLAR_OS_SYNTAX_STYLE_COMMENT;
+    const bool italic = style == SOLAR_OS_SYNTAX_STYLE_STRING ||
+        style == SOLAR_OS_SYNTAX_STYLE_NUMBER;
+
+    if (attrs == NULL || attrs->bold != bold) {
+        (void)solar_os_shell_io_set_bold(io, bold);
+        if (attrs != NULL) {
+            attrs->bold = bold;
+        }
+    }
+    if (attrs == NULL || attrs->underline != underline) {
+        (void)solar_os_shell_io_set_underline(io, underline);
+        if (attrs != NULL) {
+            attrs->underline = underline;
+        }
+    }
+    if (attrs == NULL || attrs->italic != italic) {
+        (void)solar_os_shell_io_set_italic(io, italic);
+        if (attrs != NULL) {
+            attrs->italic = italic;
+        }
+    }
+    if (attrs == NULL || attrs->inverse != inverse) {
+        (void)solar_os_shell_io_set_inverse(io, inverse);
+        if (attrs != NULL) {
+            attrs->inverse = inverse;
+        }
+    }
+}
+
+static void editor_reset_style(solar_os_shell_io_t *io)
+{
+    (void)solar_os_shell_io_set_bold(io, false);
+    (void)solar_os_shell_io_set_underline(io, false);
+    (void)solar_os_shell_io_set_italic(io, false);
+    (void)solar_os_shell_io_set_inverse(io, false);
+}
+
+static void editor_prepare_syntax_state(solar_os_syntax_state_t *state, size_t first_line)
+{
+    solar_os_syntax_state_init(state);
+    if (state == NULL || editor.syntax == SOLAR_OS_SYNTAX_NONE || first_line == 0) {
+        return;
+    }
+
+    size_t start = 0;
+    for (size_t line = 0; line < first_line && start < editor.len; line++) {
+        const size_t end = editor_line_end_for(start);
+        solar_os_syntax_highlight_line(editor.syntax,
+                                       state,
+                                       &editor.buffer[start],
+                                       end - start,
+                                       0,
+                                       NULL,
+                                       0);
+        start = end < editor.len ? end + 1 : editor.len;
+    }
+}
+
 static void editor_ensure_cursor_visible(solar_os_shell_io_t *io)
 {
     const size_t rows = solar_os_shell_io_rows(io);
@@ -242,6 +390,8 @@ static void editor_render(solar_os_context_t *ctx)
     const size_t text_rows = rows > 1 ? rows - 1 : 1;
     const size_t cursor_line = editor_line_for_index(editor.cursor);
     const size_t cursor_col = editor_cursor_col();
+    solar_os_syntax_state_t syntax_state;
+    editor_attrs_t attrs = {0};
     size_t selection_start = 0;
     size_t selection_end = 0;
     const bool has_selection = editor_has_selection();
@@ -280,17 +430,21 @@ static void editor_render(solar_os_context_t *ctx)
 
     solar_os_shell_io_set_cursor(io, 0, 0);
     editor_write_clipped(io, header, cols, true);
+    editor_reset_style(io);
+    editor_prepare_syntax_state(&syntax_state, editor.top_line);
 
     for (size_t row = 0; row < text_rows; row++) {
         const size_t line_index = editor.top_line + row;
         const size_t start = editor_index_for_line(line_index);
         const size_t end = editor_line_end_for(start);
         char line[SOLAR_OS_TERMINAL_MAX_COLS];
+        uint8_t styles[SOLAR_OS_TERMINAL_MAX_COLS];
+        size_t line_len = 0;
         size_t visible_start = start + editor.left_col;
         size_t copy_len = 0;
 
         if (start < editor.len || line_index == 0) {
-            const size_t line_len = end >= start ? end - start : 0;
+            line_len = end >= start ? end - start : 0;
             if (editor.left_col < line_len) {
                 copy_len = line_len - editor.left_col;
                 if (copy_len > cols) {
@@ -303,16 +457,30 @@ static void editor_render(solar_os_context_t *ctx)
                 memcpy(line, &editor.buffer[visible_start], copy_len);
             }
         }
+        if (editor.syntax != SOLAR_OS_SYNTAX_NONE && (start < editor.len || line_index == 0)) {
+            solar_os_syntax_highlight_line(editor.syntax,
+                                           &syntax_state,
+                                           &editor.buffer[start],
+                                           line_len,
+                                           editor.left_col,
+                                           styles,
+                                           copy_len);
+        } else if (copy_len > 0) {
+            memset(styles, SOLAR_OS_SYNTAX_STYLE_NORMAL, copy_len);
+        }
 
         solar_os_shell_io_set_cursor(io, row + 1, 0);
         for (size_t col = 0; col < copy_len; col++) {
             const size_t index = visible_start + col;
             const bool selected = has_selection && index >= selection_start && index < selection_end;
-            solar_os_shell_io_set_inverse(io, selected);
+            const solar_os_syntax_style_t style = (solar_os_syntax_style_t)styles[col];
+            editor_apply_style(io, &attrs, style, selected);
             solar_os_shell_io_put_char(io, editor_is_printable(line[col]) ? line[col] : '.');
         }
-        solar_os_shell_io_set_inverse(io, false);
+        editor_reset_style(io);
+        memset(&attrs, 0, sizeof(attrs));
     }
+    editor_reset_style(io);
 
     if (rows > 1 &&
         cursor_line >= editor.top_line &&
@@ -763,6 +931,7 @@ static esp_err_t edit_start(solar_os_context_t *ctx)
         return ESP_ERR_NO_MEM;
     }
     editor.capacity = EDITOR_BUFFER_CAPACITY;
+    editor_capture_text_size(ctx);
 
     const int argc = solar_os_context_argc(ctx);
     if (argc != 2) {
@@ -790,6 +959,7 @@ static esp_err_t edit_start(solar_os_context_t *ctx)
         return ESP_OK;
     }
     strlcpy(editor.display_name, arg != NULL ? arg : editor.path, sizeof(editor.display_name));
+    editor.syntax = solar_os_syntax_language_for_path(editor.path);
 
     const esp_err_t err = editor_open_file();
     if (err != ESP_OK) {
@@ -802,7 +972,7 @@ static esp_err_t edit_start(solar_os_context_t *ctx)
 
 static void edit_stop(solar_os_context_t *ctx)
 {
-    (void)ctx;
+    editor_restore_text_size(ctx);
 
     heap_caps_free(editor.buffer);
     memset(&editor, 0, sizeof(editor));
@@ -857,6 +1027,12 @@ static bool edit_event(solar_os_context_t *ctx, const solar_os_event_t *event)
         break;
     case 0x18:
         editor_cut_selection();
+        break;
+    case SOLAR_OS_KEY_CTRL_PLUS:
+        editor_adjust_text_size(ctx, 1);
+        break;
+    case SOLAR_OS_KEY_CTRL_MINUS:
+        editor_adjust_text_size(ctx, -1);
         break;
     case SOLAR_OS_KEY_LEFT:
         editor_apply_move(false, editor_move_left);

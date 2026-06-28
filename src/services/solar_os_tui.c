@@ -20,12 +20,20 @@ static bool tui_valid(const solar_os_tui_t *tui)
 static void tui_set_attr(solar_os_terminal_t *term, uint8_t attr)
 {
     solar_os_terminal_set_bold(term, (attr & SOLAR_OS_TUI_ATTR_BOLD) != 0);
+    solar_os_terminal_set_italic(term, (attr & SOLAR_OS_TUI_ATTR_ITALIC) != 0);
+    solar_os_terminal_set_underline(term, (attr & SOLAR_OS_TUI_ATTR_UNDERLINE) != 0);
     solar_os_terminal_set_inverse(term, (attr & SOLAR_OS_TUI_ATTR_INVERSE) != 0);
 }
 
-static void tui_restore_attr(solar_os_terminal_t *term, bool bold, bool inverse)
+static void tui_restore_attr(solar_os_terminal_t *term,
+                             bool bold,
+                             bool italic,
+                             bool underline,
+                             bool inverse)
 {
     solar_os_terminal_set_bold(term, bold);
+    solar_os_terminal_set_italic(term, italic);
+    solar_os_terminal_set_underline(term, underline);
     solar_os_terminal_set_inverse(term, inverse);
 }
 
@@ -93,10 +101,12 @@ esp_err_t solar_os_tui_write(solar_os_tui_t *tui, const char *text, uint8_t attr
     }
 
     const bool bold = solar_os_terminal_bold(tui->terminal);
+    const bool italic = solar_os_terminal_italic(tui->terminal);
+    const bool underline = solar_os_terminal_underline(tui->terminal);
     const bool inverse = solar_os_terminal_inverse(tui->terminal);
     tui_set_attr(tui->terminal, attr);
     solar_os_terminal_write_utf8(tui->terminal, text);
-    tui_restore_attr(tui->terminal, bold, inverse);
+    tui_restore_attr(tui->terminal, bold, italic, underline, inverse);
     return ESP_OK;
 }
 
@@ -125,10 +135,12 @@ esp_err_t solar_os_tui_putch(solar_os_tui_t *tui,
     }
 
     const bool bold = solar_os_terminal_bold(tui->terminal);
+    const bool italic = solar_os_terminal_italic(tui->terminal);
+    const bool underline = solar_os_terminal_underline(tui->terminal);
     const bool inverse = solar_os_terminal_inverse(tui->terminal);
     tui_set_attr(tui->terminal, attr);
     solar_os_terminal_put_codepoint(tui->terminal, codepoint);
-    tui_restore_attr(tui->terminal, bold, inverse);
+    tui_restore_attr(tui->terminal, bold, italic, underline, inverse);
     return ESP_OK;
 }
 
@@ -152,13 +164,15 @@ esp_err_t solar_os_tui_hline(solar_os_tui_t *tui,
     const uint32_t glyph = codepoint != 0 ? codepoint : TUI_BOX_H;
 
     const bool bold = solar_os_terminal_bold(tui->terminal);
+    const bool italic = solar_os_terminal_italic(tui->terminal);
+    const bool underline = solar_os_terminal_underline(tui->terminal);
     const bool inverse = solar_os_terminal_inverse(tui->terminal);
     tui_set_attr(tui->terminal, attr);
     solar_os_terminal_set_cursor(tui->terminal, row, col);
     for (size_t i = 0; i < draw_width; i++) {
         solar_os_terminal_put_codepoint(tui->terminal, glyph);
     }
-    tui_restore_attr(tui->terminal, bold, inverse);
+    tui_restore_attr(tui->terminal, bold, italic, underline, inverse);
     return ESP_OK;
 }
 
@@ -182,13 +196,15 @@ esp_err_t solar_os_tui_vline(solar_os_tui_t *tui,
     const uint32_t glyph = codepoint != 0 ? codepoint : TUI_BOX_V;
 
     const bool bold = solar_os_terminal_bold(tui->terminal);
+    const bool italic = solar_os_terminal_italic(tui->terminal);
+    const bool underline = solar_os_terminal_underline(tui->terminal);
     const bool inverse = solar_os_terminal_inverse(tui->terminal);
     tui_set_attr(tui->terminal, attr);
     for (size_t i = 0; i < draw_height; i++) {
         solar_os_terminal_set_cursor(tui->terminal, row + i, col);
         solar_os_terminal_put_codepoint(tui->terminal, glyph);
     }
-    tui_restore_attr(tui->terminal, bold, inverse);
+    tui_restore_attr(tui->terminal, bold, italic, underline, inverse);
     return ESP_OK;
 }
 
@@ -290,6 +306,8 @@ esp_err_t solar_os_tui_fill(solar_os_tui_t *tui,
     const uint32_t glyph = codepoint != 0 ? codepoint : ' ';
 
     const bool bold = solar_os_terminal_bold(tui->terminal);
+    const bool italic = solar_os_terminal_italic(tui->terminal);
+    const bool underline = solar_os_terminal_underline(tui->terminal);
     const bool inverse = solar_os_terminal_inverse(tui->terminal);
     tui_set_attr(tui->terminal, attr);
     for (size_t y = 0; y < draw_height; y++) {
@@ -298,6 +316,6 @@ esp_err_t solar_os_tui_fill(solar_os_tui_t *tui,
             solar_os_terminal_put_codepoint(tui->terminal, glyph);
         }
     }
-    tui_restore_attr(tui->terminal, bold, inverse);
+    tui_restore_attr(tui->terminal, bold, italic, underline, inverse);
     return ESP_OK;
 }

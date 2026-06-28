@@ -2795,6 +2795,8 @@ static void python_register_solaros_module(void)
     python_module_store(tui, "NORMAL", mp_obj_new_int(SOLAR_OS_TUI_ATTR_NORMAL));
     python_module_store(tui, "BOLD", mp_obj_new_int(SOLAR_OS_TUI_ATTR_BOLD));
     python_module_store(tui, "INVERSE", mp_obj_new_int(SOLAR_OS_TUI_ATTR_INVERSE));
+    python_module_store(tui, "ITALIC", mp_obj_new_int(SOLAR_OS_TUI_ATTR_ITALIC));
+    python_module_store(tui, "UNDERLINE", mp_obj_new_int(SOLAR_OS_TUI_ATTR_UNDERLINE));
     python_module_store(tui, "KEY_UP", mp_obj_new_int(SOLAR_OS_KEY_UP));
     python_module_store(tui, "KEY_DOWN", mp_obj_new_int(SOLAR_OS_KEY_DOWN));
     python_module_store(tui, "KEY_LEFT", mp_obj_new_int(SOLAR_OS_KEY_LEFT));

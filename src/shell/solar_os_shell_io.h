@@ -24,6 +24,8 @@ struct solar_os_shell_io {
     size_t cursor_row;
     size_t cursor_col;
     bool bold;
+    bool italic;
+    bool underline;
     bool inverse;
     bool cursor_visible;
 };
@@ -44,6 +46,8 @@ esp_err_t solar_os_shell_io_writeln(solar_os_shell_io_t *io, const char *text);
 esp_err_t solar_os_shell_io_printf(solar_os_shell_io_t *io, const char *fmt, ...);
 esp_err_t solar_os_shell_io_vprintf(solar_os_shell_io_t *io, const char *fmt, va_list args);
 esp_err_t solar_os_shell_io_set_bold(solar_os_shell_io_t *io, bool enabled);
+esp_err_t solar_os_shell_io_set_italic(solar_os_shell_io_t *io, bool enabled);
+esp_err_t solar_os_shell_io_set_underline(solar_os_shell_io_t *io, bool enabled);
 esp_err_t solar_os_shell_io_set_inverse(solar_os_shell_io_t *io, bool enabled);
 esp_err_t solar_os_shell_io_write_bold(solar_os_shell_io_t *io, const char *text);
 esp_err_t solar_os_shell_io_printf_bold(solar_os_shell_io_t *io, const char *fmt, ...);

@@ -193,6 +193,7 @@ set(SOLAR_OS_SRCS
     "services/solar_os_splash.c"
     "services/solar_os_storage.c"
     "services/solar_os_stream.c"
+    "services/solar_os_syntax.c"
     "services/solar_os_terminal.c"
     "services/solar_os_time.c"
     "services/solar_os_transfer.c"

@@ -247,6 +247,8 @@ static void ssh_reset_csi(void)
 static void ssh_reset_terminal_modes(solar_os_terminal_t *term)
 {
     solar_os_terminal_set_bold(term, false);
+    solar_os_terminal_set_italic(term, false);
+    solar_os_terminal_set_underline(term, false);
     solar_os_terminal_set_inverse(term, false);
     solar_os_terminal_set_cursor_visible(term, true);
     solar_os_terminal_utf8_reset(term);
@@ -341,6 +343,8 @@ static void ssh_handle_sgr(solar_os_terminal_t *term)
 {
     if (ssh_app.csi.param_count == 0) {
         solar_os_terminal_set_bold(term, false);
+        solar_os_terminal_set_italic(term, false);
+        solar_os_terminal_set_underline(term, false);
         solar_os_terminal_set_inverse(term, false);
         return;
     }
@@ -349,14 +353,21 @@ static void ssh_handle_sgr(solar_os_terminal_t *term)
         switch (ssh_app.csi.params[i]) {
         case 0:
             solar_os_terminal_set_bold(term, false);
+            solar_os_terminal_set_italic(term, false);
+            solar_os_terminal_set_underline(term, false);
             solar_os_terminal_set_inverse(term, false);
             break;
         case 1:
             solar_os_terminal_set_bold(term, true);
             break;
         case 2:
-        case 4:
         case 5:
+            break;
+        case 3:
+            solar_os_terminal_set_italic(term, true);
+            break;
+        case 4:
+            solar_os_terminal_set_underline(term, true);
             break;
         case 7:
             solar_os_terminal_set_inverse(term, true);
@@ -364,7 +375,12 @@ static void ssh_handle_sgr(solar_os_terminal_t *term)
         case 22:
             solar_os_terminal_set_bold(term, false);
             break;
+        case 23:
+            solar_os_terminal_set_italic(term, false);
+            break;
         case 24:
+            solar_os_terminal_set_underline(term, false);
+            break;
         case 25:
             break;
         case 27:

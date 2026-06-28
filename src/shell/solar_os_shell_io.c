@@ -144,6 +144,10 @@ void solar_os_shell_io_init_terminal(solar_os_shell_io_t *io, solar_os_terminal_
     io->rows = terminal != NULL ? (uint16_t)solar_os_terminal_rows(terminal) : 0;
     io->cursor_row = terminal != NULL ? solar_os_terminal_cursor_row(terminal) : 0;
     io->cursor_col = terminal != NULL ? solar_os_terminal_cursor_col(terminal) : 0;
+    io->bold = terminal != NULL ? solar_os_terminal_bold(terminal) : false;
+    io->italic = terminal != NULL ? solar_os_terminal_italic(terminal) : false;
+    io->underline = terminal != NULL ? solar_os_terminal_underline(terminal) : false;
+    io->inverse = terminal != NULL ? solar_os_terminal_inverse(terminal) : false;
     io->cursor_visible = terminal != NULL ? solar_os_terminal_cursor_visible(terminal) : true;
 }
 
@@ -308,6 +312,54 @@ esp_err_t solar_os_shell_io_set_bold(solar_os_shell_io_t *io, bool enabled)
         const esp_err_t err = shell_io_port_write_bytes(io, seq, strlen(seq));
         if (err == ESP_OK) {
             io->bold = enabled;
+        }
+        return err;
+    }
+
+    return ESP_ERR_INVALID_STATE;
+}
+
+esp_err_t solar_os_shell_io_set_italic(solar_os_shell_io_t *io, bool enabled)
+{
+    if (io == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (io->kind == SOLAR_OS_SHELL_IO_KIND_TERMINAL) {
+        solar_os_terminal_set_italic(io->terminal, enabled);
+        io->italic = enabled;
+        return ESP_OK;
+    }
+
+    if (io->kind == SOLAR_OS_SHELL_IO_KIND_PORT) {
+        const char *seq = enabled ? "\x1b[3m" : "\x1b[23m";
+        const esp_err_t err = shell_io_port_write_bytes(io, seq, strlen(seq));
+        if (err == ESP_OK) {
+            io->italic = enabled;
+        }
+        return err;
+    }
+
+    return ESP_ERR_INVALID_STATE;
+}
+
+esp_err_t solar_os_shell_io_set_underline(solar_os_shell_io_t *io, bool enabled)
+{
+    if (io == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (io->kind == SOLAR_OS_SHELL_IO_KIND_TERMINAL) {
+        solar_os_terminal_set_underline(io->terminal, enabled);
+        io->underline = enabled;
+        return ESP_OK;
+    }
+
+    if (io->kind == SOLAR_OS_SHELL_IO_KIND_PORT) {
+        const char *seq = enabled ? "\x1b[4m" : "\x1b[24m";
+        const esp_err_t err = shell_io_port_write_bytes(io, seq, strlen(seq));
+        if (err == ESP_OK) {
+            io->underline = enabled;
         }
         return err;
     }
