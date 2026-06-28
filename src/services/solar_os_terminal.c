@@ -28,6 +28,8 @@ typedef struct {
     const char *name;
     const uint8_t *regular_font[SOLAR_OS_TERMINAL_FONT_COMPACT + 1];
     const uint8_t *bold_font[SOLAR_OS_TERMINAL_FONT_COMPACT + 1];
+    const uint8_t *italic_font[SOLAR_OS_TERMINAL_FONT_COMPACT + 1];
+    const uint8_t *bold_italic_font[SOLAR_OS_TERMINAL_FONT_COMPACT + 1];
     uint8_t cell_width[SOLAR_OS_TERMINAL_FONT_COMPACT + 1];
 } terminal_text_size_profile_t;
 
@@ -51,6 +53,14 @@ static const terminal_text_size_profile_t terminal_text_sizes[SOLAR_OS_TERMINAL_
             [SOLAR_OS_TERMINAL_FONT_MONO] = u8g2_font_solar_os_default_b_12_tf,
             [SOLAR_OS_TERMINAL_FONT_COMPACT] = u8g2_font_solar_os_default_b_12_tf,
         },
+        .italic_font = {
+            [SOLAR_OS_TERMINAL_FONT_MONO] = u8g2_font_solar_os_default_i_12_tf,
+            [SOLAR_OS_TERMINAL_FONT_COMPACT] = u8g2_font_solar_os_default_i_12_tf,
+        },
+        .bold_italic_font = {
+            [SOLAR_OS_TERMINAL_FONT_MONO] = u8g2_font_solar_os_default_bi_12_tf,
+            [SOLAR_OS_TERMINAL_FONT_COMPACT] = u8g2_font_solar_os_default_bi_12_tf,
+        },
         .cell_width = {
             [SOLAR_OS_TERMINAL_FONT_MONO] = 6,
             [SOLAR_OS_TERMINAL_FONT_COMPACT] = 5,
@@ -65,6 +75,14 @@ static const terminal_text_size_profile_t terminal_text_sizes[SOLAR_OS_TERMINAL_
         .bold_font = {
             [SOLAR_OS_TERMINAL_FONT_MONO] = u8g2_font_solar_os_default_b_14_tf,
             [SOLAR_OS_TERMINAL_FONT_COMPACT] = u8g2_font_solar_os_default_b_12_tf,
+        },
+        .italic_font = {
+            [SOLAR_OS_TERMINAL_FONT_MONO] = u8g2_font_solar_os_default_i_14_tf,
+            [SOLAR_OS_TERMINAL_FONT_COMPACT] = u8g2_font_solar_os_default_i_12_tf,
+        },
+        .bold_italic_font = {
+            [SOLAR_OS_TERMINAL_FONT_MONO] = u8g2_font_solar_os_default_bi_14_tf,
+            [SOLAR_OS_TERMINAL_FONT_COMPACT] = u8g2_font_solar_os_default_bi_12_tf,
         },
         .cell_width = {
             [SOLAR_OS_TERMINAL_FONT_MONO] = 7,
@@ -81,6 +99,14 @@ static const terminal_text_size_profile_t terminal_text_sizes[SOLAR_OS_TERMINAL_
             [SOLAR_OS_TERMINAL_FONT_MONO] = u8g2_font_solar_os_default_b_16_tf,
             [SOLAR_OS_TERMINAL_FONT_COMPACT] = u8g2_font_solar_os_default_b_14_tf,
         },
+        .italic_font = {
+            [SOLAR_OS_TERMINAL_FONT_MONO] = u8g2_font_solar_os_default_i_16_tf,
+            [SOLAR_OS_TERMINAL_FONT_COMPACT] = u8g2_font_solar_os_default_i_14_tf,
+        },
+        .bold_italic_font = {
+            [SOLAR_OS_TERMINAL_FONT_MONO] = u8g2_font_solar_os_default_bi_16_tf,
+            [SOLAR_OS_TERMINAL_FONT_COMPACT] = u8g2_font_solar_os_default_bi_14_tf,
+        },
         .cell_width = {
             [SOLAR_OS_TERMINAL_FONT_MONO] = 8,
             [SOLAR_OS_TERMINAL_FONT_COMPACT] = 6,
@@ -96,6 +122,14 @@ static const terminal_text_size_profile_t terminal_text_sizes[SOLAR_OS_TERMINAL_
             [SOLAR_OS_TERMINAL_FONT_MONO] = u8g2_font_solar_os_default_b_18_tf,
             [SOLAR_OS_TERMINAL_FONT_COMPACT] = u8g2_font_solar_os_default_b_16_tf,
         },
+        .italic_font = {
+            [SOLAR_OS_TERMINAL_FONT_MONO] = u8g2_font_solar_os_default_i_18_tf,
+            [SOLAR_OS_TERMINAL_FONT_COMPACT] = u8g2_font_solar_os_default_i_16_tf,
+        },
+        .bold_italic_font = {
+            [SOLAR_OS_TERMINAL_FONT_MONO] = u8g2_font_solar_os_default_bi_18_tf,
+            [SOLAR_OS_TERMINAL_FONT_COMPACT] = u8g2_font_solar_os_default_bi_16_tf,
+        },
         .cell_width = {
             [SOLAR_OS_TERMINAL_FONT_MONO] = 9,
             [SOLAR_OS_TERMINAL_FONT_COMPACT] = 7,
@@ -110,6 +144,14 @@ static const terminal_text_size_profile_t terminal_text_sizes[SOLAR_OS_TERMINAL_
         .bold_font = {
             [SOLAR_OS_TERMINAL_FONT_MONO] = u8g2_font_solar_os_default_b_20_tf,
             [SOLAR_OS_TERMINAL_FONT_COMPACT] = u8g2_font_solar_os_default_b_18_tf,
+        },
+        .italic_font = {
+            [SOLAR_OS_TERMINAL_FONT_MONO] = u8g2_font_solar_os_default_i_20_tf,
+            [SOLAR_OS_TERMINAL_FONT_COMPACT] = u8g2_font_solar_os_default_i_18_tf,
+        },
+        .bold_italic_font = {
+            [SOLAR_OS_TERMINAL_FONT_MONO] = u8g2_font_solar_os_default_bi_20_tf,
+            [SOLAR_OS_TERMINAL_FONT_COMPACT] = u8g2_font_solar_os_default_bi_18_tf,
         },
         .cell_width = {
             [SOLAR_OS_TERMINAL_FONT_MONO] = 10,
@@ -131,7 +173,7 @@ static size_t terminal_cols(const solar_os_terminal_t *terminal)
     return terminal != NULL && terminal->cols > 0 ? terminal->cols : 1;
 }
 
-static bool terminal_bold_get(const uint32_t words[SOLAR_OS_TERMINAL_ATTR_WORDS], size_t col)
+static bool terminal_attr_get(const uint32_t words[SOLAR_OS_TERMINAL_ATTR_WORDS], size_t col)
 {
     if (col >= SOLAR_OS_TERMINAL_MAX_COLS) {
         return false;
@@ -140,60 +182,98 @@ static bool terminal_bold_get(const uint32_t words[SOLAR_OS_TERMINAL_ATTR_WORDS]
     return (words[col / 32] & (1UL << (col % 32))) != 0;
 }
 
-static void terminal_bold_set(uint32_t words[SOLAR_OS_TERMINAL_ATTR_WORDS], size_t col, bool bold)
+static void terminal_attr_set(uint32_t words[SOLAR_OS_TERMINAL_ATTR_WORDS],
+                              size_t col,
+                              bool enabled)
 {
     if (col >= SOLAR_OS_TERMINAL_MAX_COLS) {
         return;
     }
 
     const uint32_t mask = 1UL << (col % 32);
-    if (bold) {
+    if (enabled) {
         words[col / 32] |= mask;
     } else {
         words[col / 32] &= ~mask;
     }
 }
 
-static void terminal_bold_clear_from(uint32_t words[SOLAR_OS_TERMINAL_ATTR_WORDS], size_t col)
+static void terminal_attr_clear_from(uint32_t words[SOLAR_OS_TERMINAL_ATTR_WORDS], size_t col)
 {
     for (size_t i = col; i < SOLAR_OS_TERMINAL_MAX_COLS; i++) {
-        terminal_bold_set(words, i, false);
+        terminal_attr_set(words, i, false);
     }
+}
+
+static bool terminal_bold_get(const uint32_t words[SOLAR_OS_TERMINAL_ATTR_WORDS], size_t col)
+{
+    return terminal_attr_get(words, col);
+}
+
+static void terminal_bold_set(uint32_t words[SOLAR_OS_TERMINAL_ATTR_WORDS], size_t col, bool bold)
+{
+    terminal_attr_set(words, col, bold);
+}
+
+static void terminal_bold_clear_from(uint32_t words[SOLAR_OS_TERMINAL_ATTR_WORDS], size_t col)
+{
+    terminal_attr_clear_from(words, col);
+}
+
+static bool terminal_italic_get(const uint32_t words[SOLAR_OS_TERMINAL_ATTR_WORDS], size_t col)
+{
+    return terminal_attr_get(words, col);
+}
+
+static void terminal_italic_set(uint32_t words[SOLAR_OS_TERMINAL_ATTR_WORDS],
+                                size_t col,
+                                bool italic)
+{
+    terminal_attr_set(words, col, italic);
+}
+
+static void terminal_italic_clear_from(uint32_t words[SOLAR_OS_TERMINAL_ATTR_WORDS], size_t col)
+{
+    terminal_attr_clear_from(words, col);
+}
+
+static bool terminal_underline_get(const uint32_t words[SOLAR_OS_TERMINAL_ATTR_WORDS], size_t col)
+{
+    return terminal_attr_get(words, col);
+}
+
+static void terminal_underline_set(uint32_t words[SOLAR_OS_TERMINAL_ATTR_WORDS],
+                                   size_t col,
+                                   bool underline)
+{
+    terminal_attr_set(words, col, underline);
+}
+
+static void terminal_underline_clear_from(uint32_t words[SOLAR_OS_TERMINAL_ATTR_WORDS], size_t col)
+{
+    terminal_attr_clear_from(words, col);
 }
 
 static bool terminal_inverse_get(const uint32_t words[SOLAR_OS_TERMINAL_ATTR_WORDS], size_t col)
 {
-    if (col >= SOLAR_OS_TERMINAL_MAX_COLS) {
-        return false;
-    }
-
-    return (words[col / 32] & (1UL << (col % 32))) != 0;
+    return terminal_attr_get(words, col);
 }
 
 static void terminal_inverse_set(uint32_t words[SOLAR_OS_TERMINAL_ATTR_WORDS],
                                  size_t col,
                                  bool inverse)
 {
-    if (col >= SOLAR_OS_TERMINAL_MAX_COLS) {
-        return;
-    }
-
-    const uint32_t mask = 1UL << (col % 32);
-    if (inverse) {
-        words[col / 32] |= mask;
-    } else {
-        words[col / 32] &= ~mask;
-    }
+    terminal_attr_set(words, col, inverse);
 }
 
 static void terminal_inverse_clear_from(uint32_t words[SOLAR_OS_TERMINAL_ATTR_WORDS], size_t col)
 {
-    for (size_t i = col; i < SOLAR_OS_TERMINAL_MAX_COLS; i++) {
-        terminal_inverse_set(words, i, false);
-    }
+    terminal_attr_clear_from(words, col);
 }
 
-static const uint8_t *terminal_selected_font(const solar_os_terminal_t *terminal, bool bold)
+static const uint8_t *terminal_selected_font(const solar_os_terminal_t *terminal,
+                                             bool bold,
+                                             bool italic)
 {
     solar_os_terminal_font_t font = SOLAR_OS_TERMINAL_FONT_MONO;
     solar_os_terminal_text_size_t text_size = SOLAR_OS_TERMINAL_TEXT_SIZE_14;
@@ -212,6 +292,12 @@ static const uint8_t *terminal_selected_font(const solar_os_terminal_t *terminal
     }
 
     const terminal_text_size_profile_t *profile = &terminal_text_sizes[text_size];
+    if (bold && italic && profile->bold_italic_font[font] != NULL) {
+        return profile->bold_italic_font[font];
+    }
+    if (italic && profile->italic_font[font] != NULL) {
+        return profile->italic_font[font];
+    }
     if (bold && profile->bold_font[font] != NULL) {
         return profile->bold_font[font];
     }
@@ -365,7 +451,7 @@ static void terminal_apply_settings(solar_os_terminal_t *terminal, bool clear_sc
         u8g2_SetDisplayRotation(u8g2, rotation);
     }
 
-    u8g2_SetFont(u8g2, terminal_selected_font(terminal, false));
+    u8g2_SetFont(u8g2, terminal_selected_font(terminal, false, false));
     u8g2_SetFontMode(u8g2, 1);
     u8g2_SetFontPosBaseline(u8g2);
 
@@ -374,12 +460,12 @@ static void terminal_apply_settings(solar_os_terminal_t *terminal, bool clear_sc
     if (regular_width <= 0) {
         regular_width = u8g2_GetMaxCharWidth(u8g2);
     }
-    u8g2_SetFont(u8g2, terminal_selected_font(terminal, true));
+    u8g2_SetFont(u8g2, terminal_selected_font(terminal, true, false));
     int bold_width = u8g2_GetStrWidth(u8g2, "M");
     if (bold_width <= 0) {
         bold_width = u8g2_GetMaxCharWidth(u8g2);
     }
-    u8g2_SetFont(u8g2, terminal_selected_font(terminal, false));
+    u8g2_SetFont(u8g2, terminal_selected_font(terminal, false, false));
 
     int char_width = regular_width > bold_width ? regular_width : bold_width;
     const terminal_text_size_profile_t *profile =
@@ -400,13 +486,13 @@ static void terminal_apply_settings(solar_os_terminal_t *terminal, bool clear_sc
         regular_height = u8g2_GetAscent(u8g2) - u8g2_GetDescent(u8g2);
     }
 
-    u8g2_SetFont(u8g2, terminal_selected_font(terminal, true));
+    u8g2_SetFont(u8g2, terminal_selected_font(terminal, true, false));
     int bold_height = u8g2_GetMaxCharHeight(u8g2);
     if (bold_height <= 0) {
         bold_height = u8g2_GetAscent(u8g2) - u8g2_GetDescent(u8g2);
     }
 
-    u8g2_SetFont(u8g2, terminal_selected_font(terminal, false));
+    u8g2_SetFont(u8g2, terminal_selected_font(terminal, false, false));
     int line_height = (regular_height > bold_height ? regular_height : bold_height) + 1;
     if (line_height <= 1) {
         line_height = 14;
@@ -458,6 +544,8 @@ static void terminal_apply_settings(solar_os_terminal_t *terminal, bool clear_sc
         for (size_t row = 0; row < SOLAR_OS_TERMINAL_MAX_ROWS; row++) {
             terminal->lines[row][cols] = '\0';
             terminal_bold_clear_from(terminal->bold[row], cols);
+            terminal_italic_clear_from(terminal->italic[row], cols);
+            terminal_underline_clear_from(terminal->underline[row], cols);
             terminal_inverse_clear_from(terminal->inverse[row], cols);
         }
         for (size_t row = 0; row < terminal->scrollback_capacity; row++) {
@@ -466,6 +554,12 @@ static void terminal_apply_settings(solar_os_terminal_t *terminal, bool clear_sc
             }
             if (terminal->scrollback_bold != NULL) {
                 terminal_bold_clear_from(terminal->scrollback_bold[row], cols);
+            }
+            if (terminal->scrollback_italic != NULL) {
+                terminal_italic_clear_from(terminal->scrollback_italic[row], cols);
+            }
+            if (terminal->scrollback_underline != NULL) {
+                terminal_underline_clear_from(terminal->scrollback_underline[row], cols);
             }
             if (terminal->scrollback_inverse != NULL) {
                 terminal_inverse_clear_from(terminal->scrollback_inverse[row], cols);
@@ -524,6 +618,32 @@ static const uint32_t *scrollback_bold_line(const solar_os_terminal_t *terminal,
     return terminal->scrollback_bold[slot];
 }
 
+static const uint32_t *scrollback_italic_line(const solar_os_terminal_t *terminal, size_t index)
+{
+    static const uint32_t no_italic[SOLAR_OS_TERMINAL_ATTR_WORDS];
+
+    if (terminal == NULL || terminal->scrollback_italic == NULL ||
+        terminal->scrollback_capacity == 0 || index >= terminal->scrollback_count) {
+        return no_italic;
+    }
+
+    const size_t slot = (terminal->scrollback_start + index) % terminal->scrollback_capacity;
+    return terminal->scrollback_italic[slot];
+}
+
+static const uint32_t *scrollback_underline_line(const solar_os_terminal_t *terminal, size_t index)
+{
+    static const uint32_t no_underline[SOLAR_OS_TERMINAL_ATTR_WORDS];
+
+    if (terminal == NULL || terminal->scrollback_underline == NULL ||
+        terminal->scrollback_capacity == 0 || index >= terminal->scrollback_count) {
+        return no_underline;
+    }
+
+    const size_t slot = (terminal->scrollback_start + index) % terminal->scrollback_capacity;
+    return terminal->scrollback_underline[slot];
+}
+
 static const uint32_t *scrollback_inverse_line(const solar_os_terminal_t *terminal, size_t index)
 {
     static const uint32_t no_inverse[SOLAR_OS_TERMINAL_ATTR_WORDS];
@@ -540,11 +660,15 @@ static const uint32_t *scrollback_inverse_line(const solar_os_terminal_t *termin
 static void scrollback_push(solar_os_terminal_t *terminal,
                             const solar_os_terminal_cell_t *line,
                             const uint32_t bold[SOLAR_OS_TERMINAL_ATTR_WORDS],
+                            const uint32_t italic[SOLAR_OS_TERMINAL_ATTR_WORDS],
+                            const uint32_t underline[SOLAR_OS_TERMINAL_ATTR_WORDS],
                             const uint32_t inverse[SOLAR_OS_TERMINAL_ATTR_WORDS])
 {
     if (terminal == NULL ||
         terminal->scrollback == NULL ||
         terminal->scrollback_bold == NULL ||
+        terminal->scrollback_italic == NULL ||
+        terminal->scrollback_underline == NULL ||
         terminal->scrollback_inverse == NULL ||
         terminal->scrollback_capacity == 0) {
         return;
@@ -575,6 +699,22 @@ static void scrollback_push(solar_os_terminal_t *terminal,
     } else {
         memset(terminal->scrollback_bold[slot], 0, sizeof(terminal->scrollback_bold[slot]));
     }
+    if (italic != NULL) {
+        memcpy(terminal->scrollback_italic[slot],
+               italic,
+               sizeof(terminal->scrollback_italic[slot]));
+    } else {
+        memset(terminal->scrollback_italic[slot], 0, sizeof(terminal->scrollback_italic[slot]));
+    }
+    if (underline != NULL) {
+        memcpy(terminal->scrollback_underline[slot],
+               underline,
+               sizeof(terminal->scrollback_underline[slot]));
+    } else {
+        memset(terminal->scrollback_underline[slot],
+               0,
+               sizeof(terminal->scrollback_underline[slot]));
+    }
     if (inverse != NULL) {
         memcpy(terminal->scrollback_inverse[slot],
                inverse,
@@ -588,13 +728,24 @@ static void scroll_up(solar_os_terminal_t *terminal)
 {
     const size_t rows = terminal_rows(terminal);
 
-    scrollback_push(terminal, terminal->lines[0], terminal->bold[0], terminal->inverse[0]);
+    scrollback_push(terminal,
+                    terminal->lines[0],
+                    terminal->bold[0],
+                    terminal->italic[0],
+                    terminal->underline[0],
+                    terminal->inverse[0]);
     memmove(terminal->lines[0],
             terminal->lines[1],
             sizeof(terminal->lines[0]) * (rows - 1));
     memmove(terminal->bold[0],
             terminal->bold[1],
             sizeof(terminal->bold[0]) * (rows - 1));
+    memmove(terminal->italic[0],
+            terminal->italic[1],
+            sizeof(terminal->italic[0]) * (rows - 1));
+    memmove(terminal->underline[0],
+            terminal->underline[1],
+            sizeof(terminal->underline[0]) * (rows - 1));
     memmove(terminal->inverse[0],
             terminal->inverse[1],
             sizeof(terminal->inverse[0]) * (rows - 1));
@@ -602,6 +753,8 @@ static void scroll_up(solar_os_terminal_t *terminal)
            0,
            sizeof(terminal->lines[rows - 1]));
     memset(terminal->bold[rows - 1], 0, sizeof(terminal->bold[rows - 1]));
+    memset(terminal->italic[rows - 1], 0, sizeof(terminal->italic[rows - 1]));
+    memset(terminal->underline[rows - 1], 0, sizeof(terminal->underline[rows - 1]));
     memset(terminal->inverse[rows - 1], 0, sizeof(terminal->inverse[rows - 1]));
     terminal->cursor_row = rows - 1;
     terminal->cursor_col = 0;
@@ -619,17 +772,29 @@ static void terminal_alloc_scrollback(solar_os_terminal_t *terminal)
     terminal->scrollback_bold = heap_caps_calloc(SOLAR_OS_TERMINAL_SCROLLBACK_ROWS,
                                                  sizeof(terminal->scrollback_bold[0]),
                                                  MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    terminal->scrollback_italic = heap_caps_calloc(SOLAR_OS_TERMINAL_SCROLLBACK_ROWS,
+                                                   sizeof(terminal->scrollback_italic[0]),
+                                                   MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    terminal->scrollback_underline = heap_caps_calloc(SOLAR_OS_TERMINAL_SCROLLBACK_ROWS,
+                                                      sizeof(terminal->scrollback_underline[0]),
+                                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     terminal->scrollback_inverse = heap_caps_calloc(SOLAR_OS_TERMINAL_SCROLLBACK_ROWS,
                                                     sizeof(terminal->scrollback_inverse[0]),
                                                     MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (terminal->scrollback == NULL ||
         terminal->scrollback_bold == NULL ||
+        terminal->scrollback_italic == NULL ||
+        terminal->scrollback_underline == NULL ||
         terminal->scrollback_inverse == NULL) {
         heap_caps_free(terminal->scrollback);
         heap_caps_free(terminal->scrollback_bold);
+        heap_caps_free(terminal->scrollback_italic);
+        heap_caps_free(terminal->scrollback_underline);
         heap_caps_free(terminal->scrollback_inverse);
         terminal->scrollback = NULL;
         terminal->scrollback_bold = NULL;
+        terminal->scrollback_italic = NULL;
+        terminal->scrollback_underline = NULL;
         terminal->scrollback_inverse = NULL;
         terminal->scrollback_capacity = 0;
         SOLAR_OS_LOGW(TAG, "scrollback disabled: PSRAM allocation failed");
@@ -672,6 +837,8 @@ void solar_os_terminal_clear(solar_os_terminal_t *terminal)
 
     memset(terminal->lines, 0, sizeof(terminal->lines));
     memset(terminal->bold, 0, sizeof(terminal->bold));
+    memset(terminal->italic, 0, sizeof(terminal->italic));
+    memset(terminal->underline, 0, sizeof(terminal->underline));
     memset(terminal->inverse, 0, sizeof(terminal->inverse));
     if (terminal->scrollback != NULL && terminal->scrollback_capacity > 0) {
         memset(terminal->scrollback,
@@ -682,6 +849,16 @@ void solar_os_terminal_clear(solar_os_terminal_t *terminal)
         memset(terminal->scrollback_bold,
                0,
                terminal->scrollback_capacity * sizeof(terminal->scrollback_bold[0]));
+    }
+    if (terminal->scrollback_italic != NULL && terminal->scrollback_capacity > 0) {
+        memset(terminal->scrollback_italic,
+               0,
+               terminal->scrollback_capacity * sizeof(terminal->scrollback_italic[0]));
+    }
+    if (terminal->scrollback_underline != NULL && terminal->scrollback_capacity > 0) {
+        memset(terminal->scrollback_underline,
+               0,
+               terminal->scrollback_capacity * sizeof(terminal->scrollback_underline[0]));
     }
     if (terminal->scrollback_inverse != NULL && terminal->scrollback_capacity > 0) {
         memset(terminal->scrollback_inverse,
@@ -727,6 +904,10 @@ void solar_os_terminal_backspace(solar_os_terminal_t *terminal)
         terminal->cursor_col--;
         terminal->lines[terminal->cursor_row][terminal->cursor_col] = 0;
         terminal_bold_set(terminal->bold[terminal->cursor_row], terminal->cursor_col, false);
+        terminal_italic_set(terminal->italic[terminal->cursor_row], terminal->cursor_col, false);
+        terminal_underline_set(terminal->underline[terminal->cursor_row],
+                               terminal->cursor_col,
+                               false);
         terminal_inverse_set(terminal->inverse[terminal->cursor_row], terminal->cursor_col, false);
         solar_os_terminal_mark_dirty(terminal);
         return;
@@ -742,6 +923,10 @@ void solar_os_terminal_backspace(solar_os_terminal_t *terminal)
         terminal->cursor_col--;
         terminal->lines[terminal->cursor_row][terminal->cursor_col] = 0;
         terminal_bold_set(terminal->bold[terminal->cursor_row], terminal->cursor_col, false);
+        terminal_italic_set(terminal->italic[terminal->cursor_row], terminal->cursor_col, false);
+        terminal_underline_set(terminal->underline[terminal->cursor_row],
+                               terminal->cursor_col,
+                               false);
         terminal_inverse_set(terminal->inverse[terminal->cursor_row], terminal->cursor_col, false);
         solar_os_terminal_mark_dirty(terminal);
     }
@@ -767,6 +952,8 @@ void solar_os_terminal_put_codepoint(solar_os_terminal_t *terminal, uint32_t cod
     for (size_t col = line_len; col < terminal->cursor_col; col++) {
         line[col] = ' ';
         terminal_bold_set(terminal->bold[terminal->cursor_row], col, false);
+        terminal_italic_set(terminal->italic[terminal->cursor_row], col, false);
+        terminal_underline_set(terminal->underline[terminal->cursor_row], col, false);
         terminal_inverse_set(terminal->inverse[terminal->cursor_row], col, false);
     }
 
@@ -774,6 +961,12 @@ void solar_os_terminal_put_codepoint(solar_os_terminal_t *terminal, uint32_t cod
     terminal_bold_set(terminal->bold[terminal->cursor_row],
                       terminal->cursor_col,
                       terminal->bold_enabled);
+    terminal_italic_set(terminal->italic[terminal->cursor_row],
+                        terminal->cursor_col,
+                        terminal->italic_enabled);
+    terminal_underline_set(terminal->underline[terminal->cursor_row],
+                           terminal->cursor_col,
+                           terminal->underline_enabled);
     terminal_inverse_set(terminal->inverse[terminal->cursor_row],
                          terminal->cursor_col,
                          terminal->inverse_enabled);
@@ -918,6 +1111,34 @@ void solar_os_terminal_set_bold(solar_os_terminal_t *terminal, bool enabled)
 bool solar_os_terminal_bold(const solar_os_terminal_t *terminal)
 {
     return terminal != NULL && terminal->bold_enabled;
+}
+
+void solar_os_terminal_set_italic(solar_os_terminal_t *terminal, bool enabled)
+{
+    if (terminal == NULL) {
+        return;
+    }
+
+    terminal->italic_enabled = enabled;
+}
+
+bool solar_os_terminal_italic(const solar_os_terminal_t *terminal)
+{
+    return terminal != NULL && terminal->italic_enabled;
+}
+
+void solar_os_terminal_set_underline(solar_os_terminal_t *terminal, bool enabled)
+{
+    if (terminal == NULL) {
+        return;
+    }
+
+    terminal->underline_enabled = enabled;
+}
+
+bool solar_os_terminal_underline(const solar_os_terminal_t *terminal)
+{
+    return terminal != NULL && terminal->underline_enabled;
 }
 
 void solar_os_terminal_set_inverse(solar_os_terminal_t *terminal, bool enabled)
@@ -1113,11 +1334,16 @@ void solar_os_terminal_clear_line_from(solar_os_terminal_t *terminal, size_t row
     }
 
     terminal_return_to_live(terminal);
-    if (terminal->bold_enabled || terminal->inverse_enabled) {
+    if (terminal->bold_enabled ||
+        terminal->italic_enabled ||
+        terminal->underline_enabled ||
+        terminal->inverse_enabled) {
         const size_t cols = terminal_cols(terminal);
         for (size_t i = col; i < cols; i++) {
             terminal->lines[row][i] = ' ';
             terminal_bold_set(terminal->bold[row], i, terminal->bold_enabled);
+            terminal_italic_set(terminal->italic[row], i, terminal->italic_enabled);
+            terminal_underline_set(terminal->underline[row], i, terminal->underline_enabled);
             terminal_inverse_set(terminal->inverse[row], i, terminal->inverse_enabled);
         }
         terminal->lines[row][cols] = 0;
@@ -1126,6 +1352,8 @@ void solar_os_terminal_clear_line_from(solar_os_terminal_t *terminal, size_t row
                0,
                sizeof(terminal->lines[row][0]) * (SOLAR_OS_TERMINAL_MAX_COLS + 1 - col));
         terminal_bold_clear_from(terminal->bold[row], col);
+        terminal_italic_clear_from(terminal->italic[row], col);
+        terminal_underline_clear_from(terminal->underline[row], col);
         terminal_inverse_clear_from(terminal->inverse[row], col);
     }
     solar_os_terminal_mark_dirty(terminal);
@@ -1507,6 +1735,8 @@ static void terminal_draw_cell(solar_os_terminal_t *terminal,
                                int y,
                                uint16_t cell,
                                bool bold,
+                               bool italic,
+                               bool underline,
                                bool inverse)
 {
     if (inverse) {
@@ -1539,11 +1769,17 @@ static void terminal_draw_cell(solar_os_terminal_t *terminal,
         return;
     }
 
-    u8g2_SetFont(u8g2, terminal_selected_font(terminal, bold));
+    u8g2_SetFont(u8g2, terminal_selected_font(terminal, bold, italic));
     if (text_scale == 2) {
         (void)u8g2_DrawGlyphX2(u8g2, (u8g2_uint_t)x, (u8g2_uint_t)y, cell);
     } else {
         (void)u8g2_DrawGlyph(u8g2, (u8g2_uint_t)x, (u8g2_uint_t)y, cell);
+    }
+    if (underline) {
+        u8g2_DrawHLine(u8g2,
+                       (u8g2_uint_t)x,
+                       (u8g2_uint_t)(y + 1),
+                       terminal->char_width);
     }
     u8g2_SetDrawColor(u8g2, 0);
 }
@@ -1554,6 +1790,8 @@ static void terminal_draw_line(solar_os_terminal_t *terminal,
                                u8g2_uint_t y,
                                const solar_os_terminal_cell_t *line,
                                const uint32_t bold[SOLAR_OS_TERMINAL_ATTR_WORDS],
+                               const uint32_t italic[SOLAR_OS_TERMINAL_ATTR_WORDS],
+                               const uint32_t underline[SOLAR_OS_TERMINAL_ATTR_WORDS],
                                const uint32_t inverse[SOLAR_OS_TERMINAL_ATTR_WORDS])
 {
     const size_t line_len = terminal_line_len(terminal, line);
@@ -1567,6 +1805,8 @@ static void terminal_draw_line(solar_os_terminal_t *terminal,
                            (int)y,
                            line[pos],
                            bold != NULL && terminal_bold_get(bold, pos),
+                           italic != NULL && terminal_italic_get(italic, pos),
+                           underline != NULL && terminal_underline_get(underline, pos),
                            inverse != NULL && terminal_inverse_get(inverse, pos));
     }
 }
@@ -1653,6 +1893,8 @@ static int cursor_x_position(solar_os_terminal_t *terminal)
 static const solar_os_terminal_cell_t *terminal_display_line(const solar_os_terminal_t *terminal,
                                                              size_t row,
                                                              const uint32_t **bold,
+                                                             const uint32_t **italic,
+                                                             const uint32_t **underline,
                                                              const uint32_t **inverse)
 {
     static const uint32_t no_attrs[SOLAR_OS_TERMINAL_ATTR_WORDS];
@@ -1660,6 +1902,12 @@ static const solar_os_terminal_cell_t *terminal_display_line(const solar_os_term
 
     if (bold != NULL) {
         *bold = no_attrs;
+    }
+    if (italic != NULL) {
+        *italic = no_attrs;
+    }
+    if (underline != NULL) {
+        *underline = no_attrs;
     }
     if (inverse != NULL) {
         *inverse = no_attrs;
@@ -1679,6 +1927,12 @@ static const solar_os_terminal_cell_t *terminal_display_line(const solar_os_term
         if (bold != NULL) {
             *bold = scrollback_bold_line(terminal, virtual_index);
         }
+        if (italic != NULL) {
+            *italic = scrollback_italic_line(terminal, virtual_index);
+        }
+        if (underline != NULL) {
+            *underline = scrollback_underline_line(terminal, virtual_index);
+        }
         if (inverse != NULL) {
             *inverse = scrollback_inverse_line(terminal, virtual_index);
         }
@@ -1690,6 +1944,12 @@ static const solar_os_terminal_cell_t *terminal_display_line(const solar_os_term
     if (live_row < terminal_rows(terminal)) {
         if (bold != NULL) {
             *bold = terminal->bold[live_row];
+        }
+        if (italic != NULL) {
+            *italic = terminal->italic[live_row];
+        }
+        if (underline != NULL) {
+            *underline = terminal->underline[live_row];
         }
         if (inverse != NULL) {
             *inverse = terminal->inverse[live_row];
@@ -2015,10 +2275,20 @@ void solar_os_terminal_draw(solar_os_terminal_t *terminal)
     for (size_t row = 0; row < terminal_rows(terminal); row++) {
         const int y = terminal->baseline_offset + (int)(row * terminal->line_height);
         const uint32_t *bold = NULL;
+        const uint32_t *italic = NULL;
+        const uint32_t *underline = NULL;
         const uint32_t *inverse = NULL;
         const solar_os_terminal_cell_t *line =
-            terminal_display_line(terminal, row, &bold, &inverse);
-        terminal_draw_line(terminal, u8g2, text_scale, (u8g2_uint_t)y, line, bold, inverse);
+            terminal_display_line(terminal, row, &bold, &italic, &underline, &inverse);
+        terminal_draw_line(terminal,
+                           u8g2,
+                           text_scale,
+                           (u8g2_uint_t)y,
+                           line,
+                           bold,
+                           italic,
+                           underline,
+                           inverse);
     }
 
     terminal_draw_vrules(terminal, u8g2);

@@ -10,6 +10,8 @@ typedef enum {
     SOLAR_OS_TUI_ATTR_NORMAL = 0,
     SOLAR_OS_TUI_ATTR_BOLD = 1U << 0,
     SOLAR_OS_TUI_ATTR_INVERSE = 1U << 1,
+    SOLAR_OS_TUI_ATTR_ITALIC = 1U << 2,
+    SOLAR_OS_TUI_ATTR_UNDERLINE = 1U << 3,
 } solar_os_tui_attr_t;
 
 typedef struct {

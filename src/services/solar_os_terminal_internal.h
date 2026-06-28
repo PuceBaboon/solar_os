@@ -21,9 +21,13 @@ struct solar_os_terminal {
     u8g2_t *u8g2;
     solar_os_terminal_cell_t lines[SOLAR_OS_TERMINAL_MAX_ROWS][SOLAR_OS_TERMINAL_MAX_COLS + 1];
     uint32_t bold[SOLAR_OS_TERMINAL_MAX_ROWS][SOLAR_OS_TERMINAL_ATTR_WORDS];
+    uint32_t italic[SOLAR_OS_TERMINAL_MAX_ROWS][SOLAR_OS_TERMINAL_ATTR_WORDS];
+    uint32_t underline[SOLAR_OS_TERMINAL_MAX_ROWS][SOLAR_OS_TERMINAL_ATTR_WORDS];
     uint32_t inverse[SOLAR_OS_TERMINAL_MAX_ROWS][SOLAR_OS_TERMINAL_ATTR_WORDS];
     solar_os_terminal_cell_t (*scrollback)[SOLAR_OS_TERMINAL_MAX_COLS + 1];
     uint32_t (*scrollback_bold)[SOLAR_OS_TERMINAL_ATTR_WORDS];
+    uint32_t (*scrollback_italic)[SOLAR_OS_TERMINAL_ATTR_WORDS];
+    uint32_t (*scrollback_underline)[SOLAR_OS_TERMINAL_ATTR_WORDS];
     uint32_t (*scrollback_inverse)[SOLAR_OS_TERMINAL_ATTR_WORDS];
     size_t scrollback_capacity;
     size_t scrollback_start;
@@ -40,6 +44,8 @@ struct solar_os_terminal {
     solar_os_terminal_font_t font;
     solar_os_terminal_text_size_t text_size;
     bool bold_enabled;
+    bool italic_enabled;
+    bool underline_enabled;
     bool inverse_enabled;
     uint8_t char_width;
     uint8_t line_height;

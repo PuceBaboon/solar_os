@@ -2603,6 +2603,8 @@ static void solua_open_solaros(lua_State *L)
     solua_set_int(L, mod, "NORMAL", SOLAR_OS_TUI_ATTR_NORMAL);
     solua_set_int(L, mod, "BOLD", SOLAR_OS_TUI_ATTR_BOLD);
     solua_set_int(L, mod, "INVERSE", SOLAR_OS_TUI_ATTR_INVERSE);
+    solua_set_int(L, mod, "ITALIC", SOLAR_OS_TUI_ATTR_ITALIC);
+    solua_set_int(L, mod, "UNDERLINE", SOLAR_OS_TUI_ATTR_UNDERLINE);
     solua_set_int(L, mod, "KEY_UP", SOLAR_OS_KEY_UP);
     solua_set_int(L, mod, "KEY_DOWN", SOLAR_OS_KEY_DOWN);
     solua_set_int(L, mod, "KEY_LEFT", SOLAR_OS_KEY_LEFT);
