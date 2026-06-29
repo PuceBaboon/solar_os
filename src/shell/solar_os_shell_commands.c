@@ -595,22 +595,58 @@ static void job_print_usage(solar_os_shell_io_t *term)
     solar_os_shell_io_writeln(term, "  job stop <name>");
 }
 
-static void job_print_status(solar_os_shell_io_t *term, const solar_os_job_status_t *status)
+static void job_print_resource(solar_os_shell_io_t *term,
+                               const solar_os_job_resource_t *resource)
+{
+    if (term == NULL || resource == NULL || resource->type == SOLAR_OS_JOB_RESOURCE_NONE) {
+        return;
+    }
+
+    solar_os_shell_io_printf(term,
+                             "  - %-6s %s%s%s\n",
+                             solar_os_job_resource_type_name(resource->type),
+                             resource->name,
+                             resource->detail[0] != '\0' ? " " : "",
+                             resource->detail);
+}
+
+static void job_print_status(solar_os_shell_io_t *term,
+                             const solar_os_job_status_t *status,
+                             bool detail)
 {
     if (status == NULL) {
         return;
     }
 
     solar_os_shell_io_printf(term,
-                             "%-12s %-8s %5u %s\n",
+                             "%-12s %-8s %-11s %4s %5u %3u %s\n",
                              status->name != NULL ? status->name : "?",
                              solar_os_job_state_name(status->state),
+                             solar_os_job_kind_name(status->kind),
+                             status->has_event ? "tick" : "-",
                              (unsigned)status->tick_count,
+                             (unsigned)status->resource_count,
                              status->summary != NULL ? status->summary : "job");
     if (status->state == SOLAR_OS_JOB_FAILED && status->last_error != ESP_OK) {
         solar_os_shell_io_printf(term,
                                  "  last error: %s\n",
                                  esp_err_to_name(status->last_error));
+    }
+    if (!detail) {
+        return;
+    }
+
+    solar_os_shell_io_printf(term,
+                             "  owner: %s\n",
+                             status->owner[0] != '\0' ? status->owner : "-");
+    if (status->resource_count == 0) {
+        solar_os_shell_io_writeln(term, "  resources: none");
+        return;
+    }
+
+    solar_os_shell_io_writeln(term, "  resources:");
+    for (size_t i = 0; i < status->resource_count; i++) {
+        job_print_resource(term, &status->resources[i]);
     }
 }
 
@@ -662,12 +698,18 @@ static bool job_print_single_port_error(solar_os_shell_io_t *term,
     if (info.claimed) {
         solar_os_job_status_t owner_job;
         const bool owner_is_job = info.owner[0] != '\0' &&
-            solar_os_jobs_get_by_name(info.owner, &owner_job);
-        solar_os_shell_io_printf(term,
-                                 "job start failed: %s%s owns %s\n",
-                                 info.owner[0] != '\0' ? info.owner : "another owner",
-                                 owner_is_job ? " job" : "",
-                                 info.name);
+            solar_os_jobs_get_by_owner(info.owner, &owner_job);
+        if (owner_is_job) {
+            solar_os_shell_io_printf(term,
+                                     "job start failed: job %s owns %s\n",
+                                     owner_job.name != NULL ? owner_job.name : "?",
+                                     info.name);
+        } else {
+            solar_os_shell_io_printf(term,
+                                     "job start failed: %s owns %s\n",
+                                     info.owner[0] != '\0' ? info.owner : "another owner",
+                                     info.name);
+        }
         return true;
     }
 
@@ -735,11 +777,11 @@ void solar_os_shell_cmd_jobs(solar_os_context_t *ctx, int argc, char **argv)
         return;
     }
 
-    solar_os_shell_io_writeln(term, "NAME         STATE    TICKS SUMMARY");
+    solar_os_shell_io_writeln(term, "NAME         STATE    KIND        EVT  TICKS RES SUMMARY");
     for (size_t i = 0; i < count; i++) {
         solar_os_job_status_t status;
         if (solar_os_jobs_get(i, &status)) {
-            job_print_status(term, &status);
+            job_print_status(term, &status, false);
         }
     }
 }
@@ -768,8 +810,8 @@ void solar_os_shell_cmd_job(solar_os_context_t *ctx, int argc, char **argv)
             solar_os_shell_io_printf(term, "job: not found: %s\n", argv[2]);
             return;
         }
-        solar_os_shell_io_writeln(term, "NAME         STATE    TICKS SUMMARY");
-        job_print_status(term, &status);
+        solar_os_shell_io_writeln(term, "NAME         STATE    KIND        EVT  TICKS RES SUMMARY");
+        job_print_status(term, &status, true);
         return;
     }
 

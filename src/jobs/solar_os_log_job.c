@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "solar_os_jobs.h"
 #include "solar_os_log.h"
 #include "solar_os_port.h"
 #include "solar_os_storage.h"
@@ -171,7 +172,7 @@ static esp_err_t log_job_start_port(const char *port_name)
         return ESP_ERR_NOT_SUPPORTED;
     }
 
-    err = solar_os_port_claim(port_name, "log", &log_job.port);
+    err = solar_os_jobs_claim_port(solar_os_log_job.name, port_name, &log_job.port);
     if (err != ESP_OK) {
         return err;
     }
@@ -197,6 +198,10 @@ static esp_err_t log_job_start_file(const char *path_arg)
     log_job.file = file;
     log_job.target = LOG_JOB_TARGET_FILE;
     strlcpy(log_job.target_name, path, sizeof(log_job.target_name));
+    (void)solar_os_jobs_note_resource(solar_os_log_job.name,
+                                      SOLAR_OS_JOB_RESOURCE_FILE,
+                                      path,
+                                      "append");
     return ESP_OK;
 }
 

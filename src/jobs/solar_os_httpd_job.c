@@ -11,6 +11,7 @@
 
 #include "esp_heap_caps.h"
 #include "esp_http_server.h"
+#include "solar_os_jobs.h"
 #include "solar_os_log.h"
 #include "solar_os_storage.h"
 
@@ -487,6 +488,16 @@ static esp_err_t httpd_job_start(solar_os_context_t *ctx, int argc, char **argv)
     httpd_job.file_count = 0;
     httpd_job.listing_count = 0;
     httpd_job.last_error = ESP_OK;
+    (void)solar_os_jobs_note_resource(solar_os_httpd_job.name,
+                                      SOLAR_OS_JOB_RESOURCE_FILE,
+                                      httpd_job.root,
+                                      "serve");
+    char port[16];
+    snprintf(port, sizeof(port), "tcp:%u", (unsigned)config.server_port);
+    (void)solar_os_jobs_note_resource(solar_os_httpd_job.name,
+                                      SOLAR_OS_JOB_RESOURCE_NET,
+                                      port,
+                                      "listen");
 
     SOLAR_OS_LOGI(TAG, "started on port %u root=%s", (unsigned)config.server_port, httpd_job.root);
     return ESP_OK;

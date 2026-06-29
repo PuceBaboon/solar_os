@@ -80,9 +80,15 @@ struct solar_os_app {
     void (*title)(solar_os_context_t *ctx, char *buffer, size_t buffer_len);
 };
 
+typedef enum {
+    SOLAR_OS_JOB_KIND_BACKGROUND,
+    SOLAR_OS_JOB_KIND_INTERACTIVE,
+} solar_os_job_kind_t;
+
 struct solar_os_job {
     const char *name;
     const char *summary;
+    solar_os_job_kind_t kind;
     esp_err_t (*start)(solar_os_context_t *ctx, int argc, char **argv);
     void (*stop)(solar_os_context_t *ctx);
     bool (*event)(solar_os_context_t *ctx, const solar_os_event_t *event);

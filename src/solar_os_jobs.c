@@ -1,5 +1,6 @@
 #include "solar_os_jobs.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #include "jobs/solar_os_job_registry.h"
@@ -10,6 +11,9 @@ typedef struct {
     esp_err_t last_error;
     uint32_t tick_count;
     uint32_t last_tick_ms;
+    char owner[SOLAR_OS_JOB_OWNER_MAX];
+    size_t resource_count;
+    solar_os_job_resource_t resources[SOLAR_OS_JOB_RESOURCE_MAX];
 } solar_os_job_runtime_t;
 
 static solar_os_job_runtime_t job_runtimes[SOLAR_OS_JOBS_MAX];
@@ -33,6 +37,52 @@ static int job_index_by_name(const char *name)
     return -1;
 }
 
+static int job_index_by_owner(const char *owner)
+{
+    if (owner == NULL || owner[0] == '\0') {
+        return -1;
+    }
+
+    for (size_t i = 0; i < job_runtime_count; i++) {
+        const solar_os_job_runtime_t *runtime = &job_runtimes[i];
+        if (runtime->entry == NULL || runtime->entry->name == NULL) {
+            continue;
+        }
+        if (runtime->owner[0] != '\0' && strcmp(runtime->owner, owner) == 0) {
+            return (int)i;
+        }
+        if (strcmp(runtime->entry->name, owner) == 0) {
+            return (int)i;
+        }
+        if (strncmp(owner, "job:", 4) == 0 && strcmp(runtime->entry->name, owner + 4) == 0) {
+            return (int)i;
+        }
+    }
+
+    return -1;
+}
+
+static solar_os_job_kind_t job_kind_from_runtime(const solar_os_job_runtime_t *runtime)
+{
+    if (runtime == NULL ||
+        runtime->entry == NULL ||
+        runtime->entry->job == NULL) {
+        return SOLAR_OS_JOB_KIND_BACKGROUND;
+    }
+    return runtime->entry->job->kind;
+}
+
+static void job_clear_resources_by_index(size_t index)
+{
+    if (index >= job_runtime_count) {
+        return;
+    }
+
+    solar_os_job_runtime_t *runtime = &job_runtimes[index];
+    runtime->resource_count = 0;
+    memset(runtime->resources, 0, sizeof(runtime->resources));
+}
+
 static bool job_status_from_runtime(size_t index, solar_os_job_status_t *status)
 {
     if (status == NULL || index >= job_runtime_count || job_runtimes[index].entry == NULL) {
@@ -43,11 +93,18 @@ static bool job_status_from_runtime(size_t index, solar_os_job_status_t *status)
     *status = (solar_os_job_status_t){
         .name = runtime->entry->name,
         .summary = runtime->entry->summary,
+        .kind = job_kind_from_runtime(runtime),
         .state = runtime->state,
         .last_error = runtime->last_error,
         .tick_count = runtime->tick_count,
         .last_tick_ms = runtime->last_tick_ms,
+        .has_event = runtime->entry->job != NULL && runtime->entry->job->event != NULL,
+        .resource_count = runtime->resource_count,
     };
+    strlcpy(status->owner, runtime->owner, sizeof(status->owner));
+    memcpy(status->resources,
+           runtime->resources,
+           runtime->resource_count * sizeof(runtime->resources[0]));
     return true;
 }
 
@@ -67,6 +124,11 @@ esp_err_t solar_os_jobs_init(void)
         job_runtimes[i].entry = solar_os_job_registry_get(i);
         job_runtimes[i].state = SOLAR_OS_JOB_STOPPED;
         job_runtimes[i].last_error = ESP_OK;
+        if (job_runtimes[i].entry != NULL) {
+            (void)solar_os_jobs_owner_name(job_runtimes[i].entry->name,
+                                           job_runtimes[i].owner,
+                                           sizeof(job_runtimes[i].owner));
+        }
     }
 
     jobs_initialized = true;
@@ -90,6 +152,14 @@ bool solar_os_jobs_get_by_name(const char *name, solar_os_job_status_t *status)
     (void)solar_os_jobs_init();
 
     const int index = job_index_by_name(name);
+    return index >= 0 && job_status_from_runtime((size_t)index, status);
+}
+
+bool solar_os_jobs_get_by_owner(const char *owner, solar_os_job_status_t *status)
+{
+    (void)solar_os_jobs_init();
+
+    const int index = job_index_by_owner(owner);
     return index >= 0 && job_status_from_runtime((size_t)index, status);
 }
 
@@ -121,11 +191,13 @@ esp_err_t solar_os_jobs_start(solar_os_context_t *ctx, const char *name, int arg
             runtime->entry->job->stop(ctx);
         }
         runtime->state = SOLAR_OS_JOB_STOPPED;
+        job_clear_resources_by_index((size_t)index);
     }
     if (runtime->entry == NULL || runtime->entry->job == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
 
+    job_clear_resources_by_index((size_t)index);
     ret = ESP_OK;
     if (runtime->entry->job->start != NULL) {
         ret = runtime->entry->job->start(ctx, argc, argv);
@@ -135,6 +207,9 @@ esp_err_t solar_os_jobs_start(solar_os_context_t *ctx, const char *name, int arg
     runtime->tick_count = 0;
     runtime->last_tick_ms = 0;
     runtime->state = ret == ESP_OK ? SOLAR_OS_JOB_RUNNING : SOLAR_OS_JOB_FAILED;
+    if (ret != ESP_OK) {
+        job_clear_resources_by_index((size_t)index);
+    }
     return ret;
 }
 
@@ -153,6 +228,7 @@ esp_err_t solar_os_jobs_stop(solar_os_context_t *ctx, const char *name)
     solar_os_job_runtime_t *runtime = &job_runtimes[index];
     if (runtime->state != SOLAR_OS_JOB_RUNNING) {
         runtime->state = SOLAR_OS_JOB_STOPPED;
+        job_clear_resources_by_index((size_t)index);
         return ESP_OK;
     }
     if (runtime->entry != NULL &&
@@ -163,6 +239,7 @@ esp_err_t solar_os_jobs_stop(solar_os_context_t *ctx, const char *name)
 
     runtime->state = SOLAR_OS_JOB_STOPPED;
     runtime->last_error = ESP_OK;
+    job_clear_resources_by_index((size_t)index);
     return ESP_OK;
 }
 
@@ -181,6 +258,7 @@ esp_err_t solar_os_jobs_mark_stopped(const char *name, esp_err_t last_error)
     solar_os_job_runtime_t *runtime = &job_runtimes[index];
     runtime->state = SOLAR_OS_JOB_STOPPED;
     runtime->last_error = last_error;
+    job_clear_resources_by_index((size_t)index);
     return ESP_OK;
 }
 
@@ -210,6 +288,94 @@ void solar_os_jobs_tick(solar_os_context_t *ctx, uint32_t now_ms)
     }
 }
 
+esp_err_t solar_os_jobs_owner_name(const char *name, char *owner, size_t owner_len)
+{
+    if (name == NULL || name[0] == '\0' || owner == NULL || owner_len == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const int written = snprintf(owner, owner_len, "job:%s", name);
+    if (written < 0 || (size_t)written >= owner_len) {
+        owner[0] = '\0';
+        return ESP_ERR_INVALID_SIZE;
+    }
+    return ESP_OK;
+}
+
+esp_err_t solar_os_jobs_note_resource(const char *name,
+                                      solar_os_job_resource_type_t type,
+                                      const char *resource,
+                                      const char *detail)
+{
+    esp_err_t ret = solar_os_jobs_init();
+    if (ret != ESP_OK) {
+        return ret;
+    }
+    if (type == SOLAR_OS_JOB_RESOURCE_NONE ||
+        resource == NULL ||
+        resource[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const int index = job_index_by_name(name);
+    if (index < 0) {
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    solar_os_job_runtime_t *runtime = &job_runtimes[index];
+    for (size_t i = 0; i < runtime->resource_count; i++) {
+        solar_os_job_resource_t *existing = &runtime->resources[i];
+        if (existing->type == type && strcmp(existing->name, resource) == 0) {
+            strlcpy(existing->detail,
+                    detail != NULL ? detail : "",
+                    sizeof(existing->detail));
+            return ESP_OK;
+        }
+    }
+
+    if (runtime->resource_count >= SOLAR_OS_JOB_RESOURCE_MAX) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    solar_os_job_resource_t *slot = &runtime->resources[runtime->resource_count++];
+    memset(slot, 0, sizeof(*slot));
+    slot->type = type;
+    strlcpy(slot->name, resource, sizeof(slot->name));
+    strlcpy(slot->detail, detail != NULL ? detail : "", sizeof(slot->detail));
+    return ESP_OK;
+}
+
+void solar_os_jobs_clear_resources(const char *name)
+{
+    if (solar_os_jobs_init() != ESP_OK) {
+        return;
+    }
+
+    const int index = job_index_by_name(name);
+    if (index >= 0) {
+        job_clear_resources_by_index((size_t)index);
+    }
+}
+
+esp_err_t solar_os_jobs_claim_port(const char *name,
+                                   const char *port_name,
+                                   solar_os_port_handle_t *handle)
+{
+    char owner[SOLAR_OS_JOB_OWNER_MAX];
+    esp_err_t err = solar_os_jobs_owner_name(name, owner, sizeof(owner));
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    err = solar_os_port_claim(port_name, owner, handle);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    (void)solar_os_jobs_note_resource(name, SOLAR_OS_JOB_RESOURCE_PORT, port_name, "rw");
+    return ESP_OK;
+}
+
 const char *solar_os_job_state_name(solar_os_job_state_t state)
 {
     switch (state) {
@@ -221,5 +387,36 @@ const char *solar_os_job_state_name(solar_os_job_state_t state)
         return "failed";
     default:
         return "unknown";
+    }
+}
+
+const char *solar_os_job_kind_name(solar_os_job_kind_t kind)
+{
+    switch (kind) {
+    case SOLAR_OS_JOB_KIND_BACKGROUND:
+        return "background";
+    case SOLAR_OS_JOB_KIND_INTERACTIVE:
+        return "interactive";
+    default:
+        return "unknown";
+    }
+}
+
+const char *solar_os_job_resource_type_name(solar_os_job_resource_type_t type)
+{
+    switch (type) {
+    case SOLAR_OS_JOB_RESOURCE_PORT:
+        return "port";
+    case SOLAR_OS_JOB_RESOURCE_FILE:
+        return "file";
+    case SOLAR_OS_JOB_RESOURCE_NET:
+        return "net";
+    case SOLAR_OS_JOB_RESOURCE_STREAM:
+        return "stream";
+    case SOLAR_OS_JOB_RESOURCE_CUSTOM:
+        return "custom";
+    case SOLAR_OS_JOB_RESOURCE_NONE:
+    default:
+        return "none";
     }
 }

@@ -9,6 +9,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "solar_os_app_registry.h"
+#include "solar_os_jobs.h"
 #include "solar_os_log.h"
 #include "solar_os_port.h"
 #include "solar_os_shell.h"
@@ -454,7 +455,7 @@ static esp_err_t shell_job_start(solar_os_context_t *ctx, int argc, char **argv)
         return err;
     }
 
-    err = solar_os_port_claim(port_name, "shell", &port);
+    err = solar_os_jobs_claim_port(solar_os_shell_job.name, port_name, &port);
     if (err != ESP_OK) {
         return err;
     }
@@ -519,6 +520,7 @@ static void shell_job_stop(solar_os_context_t *ctx)
 const solar_os_job_t solar_os_shell_job = {
     .name = "shell",
     .summary = "VT100 shell on a byte-stream port",
+    .kind = SOLAR_OS_JOB_KIND_INTERACTIVE,
     .start = shell_job_start,
     .stop = shell_job_stop,
     .event = NULL,
