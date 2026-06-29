@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stddef.h>
 
 #include "solar_os.h"
@@ -28,3 +29,11 @@ esp_err_t solar_os_shell_resolve_path(solar_os_context_t *ctx,
                                       const char *arg,
                                       char *path,
                                       size_t path_len);
+solar_os_shell_io_t *solar_os_shell_context_io(solar_os_context_t *ctx);
+bool solar_os_shell_resolve_path_for_command(solar_os_context_t *ctx,
+                                             solar_os_shell_io_t *term,
+                                             const char *command,
+                                             const char *arg,
+                                             char *path,
+                                             size_t path_len);
+esp_err_t solar_os_shell_set_cwd(solar_os_context_t *ctx, const char *path);
