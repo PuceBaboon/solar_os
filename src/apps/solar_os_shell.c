@@ -3755,6 +3755,18 @@ void solar_os_shell_session_prompt(solar_os_context_t *ctx, solar_os_shell_sessi
     shell_prompt(ctx);
 }
 
+void solar_os_shell_session_prepare_foreground_launch(solar_os_context_t *ctx,
+                                                      bool clear_on_resume)
+{
+    if (ctx == NULL || shell_session(ctx) == NULL) {
+        return;
+    }
+
+    shell_session(ctx)->builtin_suppressed_prompt = true;
+    shell_session(ctx)->prompt_on_resume = true;
+    shell_session(ctx)->clear_on_resume = clear_on_resume;
+}
+
 static esp_err_t shell_start(solar_os_context_t *ctx)
 {
     const bool preserve_terminal = solar_os_context_take_terminal_preserve(ctx);

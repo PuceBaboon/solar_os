@@ -896,6 +896,8 @@ void solar_os_shell_cmd_setterm(solar_os_context_t *ctx, int argc, char **argv)
         const esp_err_t err = solar_os_shell_launch_setterm_tui(ctx);
         if (err != ESP_OK) {
             solar_os_shell_io_printf(term, "setterm: launch failed: %s\n", esp_err_to_name(err));
+        } else {
+            solar_os_shell_session_prepare_foreground_launch(ctx, true);
         }
         return;
     }

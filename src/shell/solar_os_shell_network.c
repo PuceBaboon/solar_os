@@ -28,6 +28,7 @@
 #include "solar_os_net.h"
 #endif
 #include "solar_os_port.h"
+#include "solar_os_shell.h"
 #include "solar_os_time.h"
 #include "solar_os_wifi.h"
 
@@ -385,6 +386,8 @@ void solar_os_shell_cmd_wifi(solar_os_context_t *ctx, int argc, char **argv)
         const esp_err_t err = solar_os_shell_launch_wifi_tui(ctx);
         if (err != ESP_OK) {
             solar_os_shell_io_printf(term, "wifi: launch failed: %s\n", esp_err_to_name(err));
+        } else {
+            solar_os_shell_session_prepare_foreground_launch(ctx, true);
         }
         return;
     }
