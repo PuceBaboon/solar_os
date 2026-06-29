@@ -444,7 +444,6 @@ static void wifi_tui_stop(solar_os_context_t *ctx)
 {
     solar_os_terminal_set_cursor_visible(display_terminal(ctx), true);
     solar_os_terminal_clear(display_terminal(ctx));
-    solar_os_context_request_terminal_preserve(ctx);
 }
 
 static bool wifi_tui_event(solar_os_context_t *ctx, const solar_os_event_t *event)
