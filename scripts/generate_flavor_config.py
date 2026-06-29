@@ -18,6 +18,7 @@ class PackageDef:
     label: str
     sources: tuple[str, ...]
     requires: tuple[str, ...]
+    capabilities: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -26,6 +27,7 @@ class GroupDef:
     triggers: tuple[str, ...]
     sources: tuple[str, ...]
     requires: tuple[str, ...]
+    capabilities: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -110,6 +112,7 @@ def load_catalog(path: Path) -> PackageCatalog:
             label=str(raw.get("label") or default_package_label(name)),
             sources=string_tuple(raw.get("sources"), f"packages.{name}.sources"),
             requires=string_tuple(raw.get("requires"), f"packages.{name}.requires"),
+            capabilities=string_tuple(raw.get("capabilities"), f"packages.{name}.capabilities"),
         )
 
     groups = tuple(raw_groups.keys())
@@ -130,6 +133,7 @@ def load_catalog(path: Path) -> PackageCatalog:
             triggers=triggers,
             sources=string_tuple(raw.get("sources"), f"groups.{name}.sources"),
             requires=string_tuple(raw.get("requires"), f"groups.{name}.requires"),
+            capabilities=string_tuple(raw.get("capabilities"), f"groups.{name}.capabilities"),
         )
 
     if "core" not in group_defs:
@@ -225,6 +229,19 @@ def collect_requires(catalog: PackageCatalog,
     return unique(requires)
 
 
+def collect_capabilities(catalog: PackageCatalog,
+                         groups_enabled: dict[str, bool],
+                         packages_enabled: dict[str, bool]) -> list[str]:
+    capabilities: list[str] = []
+    for group in catalog.groups:
+        if groups_enabled[group]:
+            capabilities.extend(catalog.group_defs[group].capabilities)
+    for package in catalog.packages:
+        if packages_enabled[package]:
+            capabilities.extend(catalog.package_defs[package].capabilities)
+    return unique(capabilities)
+
+
 def generate_header(name: str,
                     description: str,
                     groups_enabled: dict[str, bool],
@@ -245,6 +262,7 @@ def generate_header(name: str,
         f"#define SOLAR_OS_PACKAGE_CATALOG_FILE {c_string(str(package_catalog))}",
         f"#define SOLAR_OS_PACKAGE_GROUP_LIST {c_string(' '.join(enabled_groups))}",
         f"#define SOLAR_OS_PACKAGE_LIST {c_string(' '.join(enabled_package_labels))}",
+        f"#define SOLAR_OS_PACKAGE_REQUIRED_CAPABILITIES {c_string(' '.join(collect_capabilities(catalog, groups_enabled, packages_enabled)))}",
         "",
     ]
     for group in catalog.groups:
@@ -277,6 +295,7 @@ def generate_cmake(name: str,
         f"set(SOLAR_OS_PACKAGE_CATALOG_FILE {cmake_string(package_catalog)})",
         f"set(SOLAR_OS_PACKAGE_GROUP_LIST {cmake_string(' '.join(enabled_groups))})",
         f"set(SOLAR_OS_PACKAGE_LIST {cmake_string(' '.join(enabled_package_labels))})",
+        f"set(SOLAR_OS_PACKAGE_REQUIRED_CAPABILITIES {cmake_string(' '.join(collect_capabilities(catalog, groups_enabled, packages_enabled)))})",
     ]
     for group in catalog.groups:
         lines.append(f"set({package_macro(group)} {1 if groups_enabled[group] else 0})")

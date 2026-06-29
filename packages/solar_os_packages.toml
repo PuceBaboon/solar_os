@@ -176,15 +176,18 @@ sources = ["apps/solar_os_curl.c"]
 [packages.app_web]
 label = "app.web"
 sources = ["apps/solar_os_web.c"]
+capabilities = ["psram"]
 
 [packages.app_chat]
 label = "app.chat"
 sources = ["apps/solar_os_chat.c"]
+capabilities = ["psram"]
 
 [packages.app_view]
 label = "app.view"
 sources = ["apps/solar_os_view.c"]
 requires = ["stb_image", "webp_decoder"]
+capabilities = ["psram"]
 
 [packages.app_invaders]
 label = "app.invaders"
@@ -194,11 +197,13 @@ sources = ["apps/solar_os_invaders.c"]
 label = "app.python"
 sources = ["apps/solar_os_python.c"]
 requires = ["micropython_embed"]
+capabilities = ["psram"]
 
 [packages.app_lua]
 label = "app.lua"
 sources = ["apps/solar_os_lua.c"]
 requires = ["lua"]
+capabilities = ["psram"]
 
 [packages.app_clock]
 label = "app.clock"
@@ -211,6 +216,7 @@ sources = ["apps/solar_os_com.c"]
 [packages.app_edit]
 label = "app.edit"
 sources = ["apps/solar_os_edit.c"]
+capabilities = ["psram"]
 
 [packages.app_less]
 label = "app.less"
@@ -219,6 +225,7 @@ sources = ["apps/solar_os_less.c"]
 [packages.app_reader]
 label = "app.reader"
 sources = ["apps/solar_os_reader.c"]
+capabilities = ["psram"]
 
 [packages.app_files]
 label = "app.files"

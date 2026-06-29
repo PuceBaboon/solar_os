@@ -192,7 +192,8 @@ typedef struct {
 } web_state_t;
 
 static const char *TAG = "solar_os_web";
-static web_state_t web;
+static web_state_t *web_state;
+#define web (*web_state)
 
 static bool web_resolve_url(const char *base, const char *href, char *out, size_t out_len);
 static const char *web_current_base_url(void);
@@ -213,6 +214,17 @@ static void *web_calloc(size_t count, size_t size)
         ptr = heap_caps_calloc(count, size, MALLOC_CAP_8BIT);
     }
     return ptr;
+}
+
+static web_state_t *web_alloc_state(void)
+{
+    return web_calloc(1, sizeof(web_state_t));
+}
+
+static void web_free_state(void)
+{
+    heap_caps_free(web_state);
+    web_state = NULL;
 }
 
 static void web_free_image_data(web_image_t *image)
@@ -3061,7 +3073,11 @@ static bool web_parse_args(solar_os_context_t *ctx, const char **url)
 
 static esp_err_t web_start(solar_os_context_t *ctx)
 {
-    memset(&web, 0, sizeof(web));
+    web_state = web_alloc_state();
+    if (web_state == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+
     web.selected_item = -1;
     web.edit_control = -1;
 
@@ -3075,6 +3091,7 @@ static esp_err_t web_start(solar_os_context_t *ctx)
 
     if (!web_allocate_buffers()) {
         web_free_buffers();
+        web_free_state();
         return ESP_ERR_NO_MEM;
     }
 
@@ -3095,7 +3112,7 @@ static void web_stop(solar_os_context_t *ctx)
                       (unsigned)SOLAR_OS_TASK_STOP_WAIT_MS);
     }
     web_free_buffers();
-    memset(&web, 0, sizeof(web));
+    web_free_state();
     solar_os_context_set_graphics_active(ctx, false);
 }
 

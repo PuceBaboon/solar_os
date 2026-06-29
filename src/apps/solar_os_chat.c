@@ -82,7 +82,8 @@ typedef struct {
     size_t message_count;
 } chat_app_state_t;
 
-static chat_app_state_t chat_app;
+static chat_app_state_t *chat_app_state;
+#define chat_app (*chat_app_state)
 
 static bool chat_arg_is_url(const char *arg)
 {
@@ -1443,6 +1444,17 @@ static void *chat_app_calloc(size_t count, size_t size)
     return ptr;
 }
 
+static chat_app_state_t *chat_app_alloc_state(void)
+{
+    return chat_app_calloc(1, sizeof(chat_app_state_t));
+}
+
+static void chat_app_free_state(void)
+{
+    heap_caps_free(chat_app_state);
+    chat_app_state = NULL;
+}
+
 static void chat_free_buffers(void)
 {
     if (chat_app.messages != NULL) {
@@ -1469,7 +1481,11 @@ static void chat_free_buffers(void)
 
 static esp_err_t chat_start(solar_os_context_t *ctx)
 {
-    memset(&chat_app, 0, sizeof(chat_app));
+    chat_app_state = chat_app_alloc_state();
+    if (chat_app_state == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+
     chat_app.focus = CHAT_APP_FOCUS_MESSAGES;
     chat_app.history_index = -1;
     chat_app.redraw = true;
@@ -1497,6 +1513,7 @@ static esp_err_t chat_start(solar_os_context_t *ctx)
 
     const esp_err_t tui_err = solar_os_tui_begin(&chat_app.tui, ctx);
     if (tui_err != ESP_OK) {
+        chat_app_free_state();
         return tui_err;
     }
 
@@ -1511,6 +1528,7 @@ static esp_err_t chat_start(solar_os_context_t *ctx)
         chat_app.history_draft == NULL ||
         chat_app.event == NULL) {
         chat_free_buffers();
+        chat_app_free_state();
         return ESP_ERR_NO_MEM;
     }
 
@@ -1534,7 +1552,7 @@ static void chat_stop(solar_os_context_t *ctx)
     (void)solar_os_chat_disconnect();
     chat_free_buffers();
     solar_os_tui_set_cursor_visible(&chat_app.tui, true);
-    memset(&chat_app, 0, sizeof(chat_app));
+    chat_app_free_state();
 }
 
 static bool chat_event(solar_os_context_t *ctx, const solar_os_event_t *event)

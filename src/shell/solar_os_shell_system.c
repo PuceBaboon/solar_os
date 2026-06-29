@@ -29,6 +29,9 @@
 #ifndef SOLAR_OS_VERSION
 #define SOLAR_OS_VERSION "0.0.0"
 #endif
+#ifndef SOLAR_OS_PACKAGE_REQUIRED_CAPABILITIES
+#define SOLAR_OS_PACKAGE_REQUIRED_CAPABILITIES ""
+#endif
 
 static solar_os_shell_io_t *terminal(solar_os_context_t *ctx)
 {
@@ -118,6 +121,11 @@ void solar_os_shell_cmd_version(solar_os_context_t *ctx, int argc, char **argv)
 
     solar_os_shell_io_printf(term, "SolarOS %s\n", SOLAR_OS_VERSION);
     solar_os_shell_io_printf(term, "Flavor: %s\n", SOLAR_OS_FLAVOR_NAME);
+    solar_os_shell_io_printf(term,
+                             "Required capabilities: %s\n",
+                             SOLAR_OS_PACKAGE_REQUIRED_CAPABILITIES[0] != '\0' ?
+                                SOLAR_OS_PACKAGE_REQUIRED_CAPABILITIES :
+                                "none");
     solar_os_shell_io_write(term, "Packages: ");
     solar_os_shell_io_writeln(term, SOLAR_OS_PACKAGE_LIST);
 }
@@ -335,6 +343,7 @@ void solar_os_shell_cmd_pkg(solar_os_context_t *ctx, int argc, char **argv)
         solar_os_shell_io_printf(term, "%s\n", SOLAR_OS_FLAVOR_DESCRIPTION);
     }
     pkg_print_wrapped_list(term, "Groups", SOLAR_OS_PACKAGE_GROUP_LIST);
+    pkg_print_wrapped_list(term, "Required capabilities", SOLAR_OS_PACKAGE_REQUIRED_CAPABILITIES);
     pkg_print_build_unit_tree(term, "Build units", SOLAR_OS_PACKAGE_LIST);
 }
 

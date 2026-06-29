@@ -129,6 +129,29 @@ endif()
 include("${SOLAR_OS_GENERATED_CMAKE}")
 message(STATUS "SolarOS flavor: ${SOLAR_OS_FLAVOR_NAME} (${SOLAR_OS_FLAVOR_INPUT})")
 
+if(SOLAR_OS_PACKAGE_REQUIRED_CAPABILITIES)
+    string(REPLACE " " ";" SOLAR_OS_REQUIRED_CAPABILITY_LIST
+        "${SOLAR_OS_PACKAGE_REQUIRED_CAPABILITIES}"
+    )
+    foreach(SOLAR_OS_REQUIRED_CAPABILITY IN LISTS SOLAR_OS_REQUIRED_CAPABILITY_LIST)
+        if(SOLAR_OS_REQUIRED_CAPABILITY STREQUAL "")
+            continue()
+        endif()
+        string(TOUPPER "${SOLAR_OS_REQUIRED_CAPABILITY}" SOLAR_OS_REQUIRED_CAPABILITY_UPPER)
+        if(NOT SOLAR_OS_REQUIRED_CAPABILITY_UPPER IN_LIST SOLAR_OS_BOARD_CAPABILITY_NAMES)
+            message(FATAL_ERROR
+                "SolarOS package catalog references unknown board capability: ${SOLAR_OS_REQUIRED_CAPABILITY}"
+            )
+        endif()
+        if(NOT SOLAR_OS_BOARD_HAS_${SOLAR_OS_REQUIRED_CAPABILITY_UPPER})
+            message(FATAL_ERROR
+                "SolarOS flavor ${SOLAR_OS_FLAVOR_NAME} requires board capability "
+                "${SOLAR_OS_REQUIRED_CAPABILITY}, but board ${SOLAR_OS_BOARD_ID} does not provide it"
+            )
+        endif()
+    endforeach()
+endif()
+
 if(NOT DEFINED SOLAR_OS_OTA_PUBLIC_KEY_FILE OR
         "${SOLAR_OS_OTA_PUBLIC_KEY_FILE}" STREQUAL "")
     if(DEFINED ENV{SOLAR_OS_OTA_PUBLIC_KEY_FILE} AND
