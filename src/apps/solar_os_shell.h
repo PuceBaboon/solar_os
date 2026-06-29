@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stddef.h>
 
 #include "solar_os.h"
@@ -22,9 +23,19 @@ bool solar_os_shell_session_event(solar_os_context_t *ctx,
                                   solar_os_shell_session_t *session,
                                   const solar_os_event_t *event);
 void solar_os_shell_session_prompt(solar_os_context_t *ctx, solar_os_shell_session_t *session);
+void solar_os_shell_session_prepare_foreground_launch(solar_os_context_t *ctx,
+                                                      bool clear_on_resume);
 esp_err_t solar_os_shell_session_start_log_follow(solar_os_context_t *ctx,
                                                   solar_os_log_level_t level);
 esp_err_t solar_os_shell_resolve_path(solar_os_context_t *ctx,
                                       const char *arg,
                                       char *path,
                                       size_t path_len);
+solar_os_shell_io_t *solar_os_shell_context_io(solar_os_context_t *ctx);
+bool solar_os_shell_resolve_path_for_command(solar_os_context_t *ctx,
+                                             solar_os_shell_io_t *term,
+                                             const char *command,
+                                             const char *arg,
+                                             char *path,
+                                             size_t path_len);
+esp_err_t solar_os_shell_set_cwd(solar_os_context_t *ctx, const char *path);

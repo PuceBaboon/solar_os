@@ -22,12 +22,20 @@
 #define READER_MARGIN_X 8
 #define READER_MARGIN_Y 5
 #define READER_MESSAGE_MAX 96
+#define READER_SEARCH_MAX 64
 #define READER_MAX_ZOOM 4
 #define READER_STATE_DIR ".reader"
 #define READER_POSITIONS_FILE "positions"
 #define READER_POSITIONS_TMP_FILE "positions.tmp"
 #define READER_POSITION_LINE_MAX (SOLAR_OS_STORAGE_PATH_MAX + 64)
 #define READER_ASSET_MAX_BYTES (1024U * 1024U)
+
+typedef struct {
+    bool valid;
+    size_t block_index;
+    size_t text_offset;
+    size_t text_len;
+} reader_search_match_t;
 
 typedef struct {
     solar_os_doc_t doc;
@@ -44,6 +52,13 @@ typedef struct {
     int layout_zoom;
     size_t epub_chapter;
     size_t epub_chapter_count;
+    bool search_input;
+    bool search_status;
+    char search[READER_SEARCH_MAX];
+    size_t search_len;
+    char last_search[READER_SEARCH_MAX];
+    size_t last_search_len;
+    reader_search_match_t match;
     char path[SOLAR_OS_STORAGE_PATH_MAX];
     char display_name[SOLAR_OS_STORAGE_PATH_MAX];
     char message[READER_MESSAGE_MAX];
@@ -292,6 +307,8 @@ static esp_err_t reader_load_epub_chapter(size_t chapter)
     reader.scroll_y = 0;
     reader.layout_valid = false;
     reader.content_height = 0;
+    reader.match.valid = false;
+    reader.search_status = false;
     reader.message[0] = '\0';
     return ESP_OK;
 }
@@ -320,6 +337,173 @@ static void reader_draw_text_clipped(solar_os_gfx_t *gfx,
     }
     clipped[n] = '\0';
     solar_os_gfx_text(gfx, x, baseline_y, clipped);
+}
+
+static bool reader_is_printable(uint8_t ch)
+{
+    return ch >= 32U && ch < 127U;
+}
+
+static bool reader_text_match_at(const char *text,
+                                 size_t text_len,
+                                 size_t offset,
+                                 const char *query,
+                                 size_t query_len)
+{
+    if (text == NULL ||
+        query == NULL ||
+        query_len == 0 ||
+        offset > text_len ||
+        query_len > text_len - offset) {
+        return false;
+    }
+
+    for (size_t i = 0; i < query_len; i++) {
+        if (tolower((unsigned char)text[offset + i]) !=
+            tolower((unsigned char)query[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool reader_match_after(size_t block_index,
+                               size_t text_offset,
+                               size_t start_block,
+                               size_t start_offset)
+{
+    return block_index > start_block ||
+        (block_index == start_block && text_offset >= start_offset);
+}
+
+static bool reader_match_before(size_t block_index,
+                                size_t text_offset,
+                                size_t start_block,
+                                size_t start_offset)
+{
+    return block_index < start_block ||
+        (block_index == start_block && text_offset < start_offset);
+}
+
+static bool reader_current_search_position(size_t *block_index, size_t *text_offset)
+{
+    if (block_index == NULL || text_offset == NULL) {
+        return false;
+    }
+    *block_index = 0;
+    *text_offset = 0;
+
+    if (!reader.layout_valid || reader.layout.line_count == 0) {
+        return reader.doc.block_count > 0;
+    }
+
+    const solar_os_doc_layout_line_t *line = &reader.layout.lines[0];
+    for (size_t i = 0; i < reader.layout.line_count; i++) {
+        line = &reader.layout.lines[i];
+        if (line->y + line->height > reader.scroll_y) {
+            break;
+        }
+    }
+
+    *block_index = line->block_index;
+    *text_offset = 0;
+    for (size_t i = 0; i < line->run_count; i++) {
+        const solar_os_doc_layout_run_t *run = &reader.layout.runs[line->run_start + i];
+        if (run->block_index == line->block_index && run->text_offset != SIZE_MAX) {
+            *text_offset = run->text_offset;
+            return true;
+        }
+    }
+    return true;
+}
+
+static bool reader_find_text(const char *query,
+                             size_t query_len,
+                             size_t start_block,
+                             size_t start_offset,
+                             bool forward,
+                             bool *wrapped)
+{
+    bool have_first = false;
+    bool have_last = false;
+    bool have_candidate = false;
+    reader_search_match_t first = {0};
+    reader_search_match_t last = {0};
+    reader_search_match_t candidate = {0};
+
+    if (wrapped != NULL) {
+        *wrapped = false;
+    }
+    if (query == NULL || query_len == 0 || reader.doc.block_count == 0) {
+        reader.match.valid = false;
+        return false;
+    }
+    if (start_block >= reader.doc.block_count) {
+        start_block = reader.doc.block_count - 1U;
+    }
+
+    for (size_t b = 0; b < reader.doc.block_count; b++) {
+        const solar_os_doc_block_t *block = &reader.doc.blocks[b];
+        const char *text = block->text != NULL ? block->text : "";
+        const size_t text_len = strlen(text);
+        if (query_len > text_len) {
+            continue;
+        }
+
+        for (size_t pos = 0; pos <= text_len - query_len; pos++) {
+            if (!reader_text_match_at(text, text_len, pos, query, query_len)) {
+                continue;
+            }
+
+            reader_search_match_t found = {
+                .valid = true,
+                .block_index = b,
+                .text_offset = pos,
+                .text_len = query_len,
+            };
+
+            if (!have_first) {
+                first = found;
+                have_first = true;
+            }
+            last = found;
+            have_last = true;
+
+            if (forward) {
+                if (!have_candidate &&
+                    reader_match_after(b, pos, start_block, start_offset)) {
+                    candidate = found;
+                    have_candidate = true;
+                }
+            } else if (reader_match_before(b, pos, start_block, start_offset)) {
+                candidate = found;
+                have_candidate = true;
+            }
+        }
+    }
+
+    if (have_candidate) {
+        reader.match = candidate;
+        return true;
+    }
+
+    if (forward && have_first) {
+        reader.match = first;
+        if (wrapped != NULL) {
+            *wrapped = true;
+        }
+        return true;
+    }
+    if (!forward && have_last) {
+        reader.match = last;
+        if (wrapped != NULL) {
+            *wrapped = true;
+        }
+        return true;
+    }
+
+    reader.match.valid = false;
+    return false;
 }
 
 static int reader_content_area_height(solar_os_gfx_t *gfx)
@@ -646,7 +830,9 @@ static void reader_draw_header(solar_os_gfx_t *gfx)
     solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_WHITE);
     solar_os_gfx_set_font(gfx, SOLAR_OS_GFX_FONT_SMALL);
 
-    if (reader.message[0] != '\0') {
+    if (reader.search_input) {
+        snprintf(title, sizeof(title), "/%s_", reader.search);
+    } else if (reader.message[0] != '\0') {
         snprintf(title, sizeof(title), "reader z%d %s", reader.zoom, reader.message);
     } else if (reader.epub && reader.epub_chapter_count > 0) {
         snprintf(title,
@@ -779,6 +965,286 @@ static size_t reader_line_for_target_y(int target_y, bool forward)
     return result;
 }
 
+static bool reader_match_to_y(int *out_y, int *out_height)
+{
+    if (!reader.match.valid || !reader.layout_valid) {
+        return false;
+    }
+
+    const size_t match_start = reader.match.text_offset;
+    const size_t match_end = reader.match.text_offset + reader.match.text_len;
+    for (size_t i = 0; i < reader.layout.run_count; i++) {
+        const solar_os_doc_layout_run_t *run = &reader.layout.runs[i];
+        if (run->block_index != reader.match.block_index || run->text_offset == SIZE_MAX) {
+            continue;
+        }
+        const size_t run_start = run->text_offset;
+        const size_t run_end = run->text_offset + run->text_len;
+        if (match_start < run_end && match_end > run_start) {
+            if (out_y != NULL) {
+                *out_y = run->y;
+            }
+            if (out_height != NULL) {
+                *out_height = run->height;
+            }
+            return true;
+        }
+    }
+
+    for (size_t i = 0; i < reader.layout.line_count; i++) {
+        const solar_os_doc_layout_line_t *line = &reader.layout.lines[i];
+        if (line->block_index == reader.match.block_index) {
+            if (out_y != NULL) {
+                *out_y = line->y;
+            }
+            if (out_height != NULL) {
+                *out_height = line->height;
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
+static void reader_scroll_to_match(solar_os_context_t *ctx)
+{
+    solar_os_gfx_t *gfx = solar_os_context_gfx(ctx);
+    reader_update_measure(gfx);
+
+    int y = 0;
+    int height = 0;
+    if (!reader_match_to_y(&y, &height)) {
+        return;
+    }
+
+    reader.scroll_y = y - READER_MARGIN_Y;
+    reader_clamp_scroll(gfx);
+}
+
+static bool reader_run_overlaps_match(const solar_os_doc_layout_run_t *run,
+                                      size_t *overlap_start,
+                                      size_t *overlap_end)
+{
+    if (run == NULL ||
+        !reader.match.valid ||
+        run->block_index != reader.match.block_index ||
+        run->text_offset == SIZE_MAX ||
+        run->text_len == 0) {
+        return false;
+    }
+
+    const size_t match_start = reader.match.text_offset;
+    const size_t match_end = reader.match.text_offset + reader.match.text_len;
+    const size_t run_start = run->text_offset;
+    const size_t run_end = run->text_offset + run->text_len;
+    if (match_start >= run_end || match_end <= run_start) {
+        return false;
+    }
+
+    if (overlap_start != NULL) {
+        *overlap_start = match_start > run_start ? match_start : run_start;
+    }
+    if (overlap_end != NULL) {
+        *overlap_end = match_end < run_end ? match_end : run_end;
+    }
+    return true;
+}
+
+static void reader_draw_match_text(solar_os_gfx_t *gfx,
+                                   const char *text,
+                                   size_t len,
+                                   int x,
+                                   int y,
+                                   int baseline,
+                                   int height,
+                                   int char_w,
+                                   int clip_x,
+                                   int clip_w)
+{
+    char temp[96];
+
+    if (gfx == NULL || text == NULL || len == 0 || char_w <= 0 || clip_w <= 0) {
+        return;
+    }
+
+    const int clip_right = clip_x + clip_w;
+    if (x >= clip_right || x + ((int)len * char_w) <= clip_x) {
+        return;
+    }
+
+    size_t skip = 0;
+    if (x < clip_x) {
+        skip = (size_t)((clip_x - x + char_w - 1) / char_w);
+        if (skip > len) {
+            return;
+        }
+        x += (int)skip * char_w;
+        text += skip;
+        len -= skip;
+    }
+
+    size_t max_chars = (size_t)((clip_right - x) / char_w);
+    if (max_chars > len) {
+        max_chars = len;
+    }
+    if (max_chars >= sizeof(temp)) {
+        max_chars = sizeof(temp) - 1U;
+    }
+    if (max_chars == 0) {
+        return;
+    }
+
+    memcpy(temp, text, max_chars);
+    temp[max_chars] = '\0';
+    solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_BLACK);
+    solar_os_gfx_fill_rect(gfx, x - 1, y, (int)max_chars * char_w + 2, height);
+    solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_WHITE);
+    solar_os_gfx_text(gfx, x, y + baseline, temp);
+}
+
+static void reader_draw_match(solar_os_gfx_t *gfx, const solar_os_doc_view_t *view)
+{
+    if (gfx == NULL || view == NULL || !reader.match.valid || !reader.layout_valid) {
+        return;
+    }
+    if (reader.match.block_index >= reader.doc.block_count) {
+        return;
+    }
+
+    const solar_os_doc_block_t *block = &reader.doc.blocks[reader.match.block_index];
+    const char *block_text = block->text != NULL ? block->text : "";
+    const size_t block_len = strlen(block_text);
+    if (reader.match.text_offset >= block_len) {
+        return;
+    }
+
+    for (size_t i = 0; i < reader.layout.run_count; i++) {
+        const solar_os_doc_layout_run_t *run = &reader.layout.runs[i];
+        size_t start = 0;
+        size_t end = 0;
+        if (!reader_run_overlaps_match(run, &start, &end) || start >= end || end > block_len) {
+            continue;
+        }
+
+        const int screen_y = view->y + run->y - view->scroll_y;
+        if (screen_y + run->height < view->y || screen_y > view->y + view->height) {
+            continue;
+        }
+
+        const int char_w = run->char_w > 0 ? run->char_w : 1;
+        const int screen_x = view->x + run->x + ((int)(start - run->text_offset) * char_w);
+
+        solar_os_gfx_set_font(gfx, run->font);
+        reader_draw_match_text(gfx,
+                               &block_text[start],
+                               end - start,
+                               screen_x,
+                               screen_y,
+                               run->baseline,
+                               run->height,
+                               char_w,
+                               view->x,
+                               view->width);
+    }
+}
+
+static bool reader_run_search(solar_os_context_t *ctx, bool forward, bool next)
+{
+    if (reader.last_search_len == 0) {
+        snprintf(reader.message, sizeof(reader.message), "no search");
+        reader.search_status = true;
+        reader.match.valid = false;
+        return false;
+    }
+
+    reader_update_measure(solar_os_context_gfx(ctx));
+
+    size_t start_block = 0;
+    size_t start_offset = 0;
+    if (next && reader.match.valid) {
+        start_block = reader.match.block_index;
+        start_offset = reader.match.text_offset;
+        if (forward) {
+            start_offset++;
+        }
+    } else {
+        (void)reader_current_search_position(&start_block, &start_offset);
+    }
+
+    bool wrapped = false;
+    if (!reader_find_text(reader.last_search, reader.last_search_len, start_block, start_offset, forward, &wrapped)) {
+        snprintf(reader.message, sizeof(reader.message), "not found: %s", reader.last_search);
+        reader.search_status = true;
+        return false;
+    }
+
+    reader_scroll_to_match(ctx);
+    snprintf(reader.message,
+             sizeof(reader.message),
+             "%s%s",
+             wrapped ? "wrapped: " : "found: ",
+             reader.last_search);
+    reader.search_status = true;
+    return true;
+}
+
+static void reader_start_search(void)
+{
+    reader.search_input = true;
+    reader.search_status = false;
+    reader.search_len = 0;
+    reader.search[0] = '\0';
+    reader.message[0] = '\0';
+}
+
+static void reader_cancel_search(void)
+{
+    reader.search_input = false;
+    reader.search_len = 0;
+    reader.search[0] = '\0';
+}
+
+static void reader_submit_search(solar_os_context_t *ctx)
+{
+    reader.search_input = false;
+    if (reader.search_len > 0) {
+        strlcpy(reader.last_search, reader.search, sizeof(reader.last_search));
+        reader.last_search_len = strlen(reader.last_search);
+    }
+    reader.search_len = 0;
+    reader.search[0] = '\0';
+    (void)reader_run_search(ctx, true, false);
+}
+
+static bool reader_handle_search_input(solar_os_context_t *ctx, uint8_t ch)
+{
+    switch (ch) {
+    case SOLAR_OS_KEY_APP_EXIT:
+        solar_os_context_request_exit(ctx);
+        break;
+    case SOLAR_OS_KEY_ESCAPE:
+        reader_cancel_search();
+        break;
+    case '\r':
+    case '\n':
+        reader_submit_search(ctx);
+        break;
+    case '\b':
+    case 0x7f:
+        if (reader.search_len > 0) {
+            reader.search[--reader.search_len] = '\0';
+        }
+        break;
+    default:
+        if (reader_is_printable(ch) && reader.search_len + 1U < sizeof(reader.search)) {
+            reader.search[reader.search_len++] = (char)ch;
+            reader.search[reader.search_len] = '\0';
+        }
+        break;
+    }
+    return true;
+}
+
 static void reader_render(solar_os_context_t *ctx)
 {
     solar_os_gfx_t *gfx = solar_os_context_gfx(ctx);
@@ -819,6 +1285,7 @@ static void reader_render(solar_os_context_t *ctx)
         view.scroll_y = reader.scroll_y;
         if (reader.layout_valid) {
             solar_os_doc_layout_render(gfx, &reader.doc, &reader.layout, &view);
+            reader_draw_match(gfx, &view);
         }
         reader_draw_scrollbar(gfx, &view);
     }
@@ -1021,15 +1488,31 @@ static bool reader_handle_char(solar_os_context_t *ctx, char raw_ch)
 {
     const uint8_t ch = (uint8_t)raw_ch;
 
-    if (ch == SOLAR_OS_KEY_APP_EXIT || ch == SOLAR_OS_KEY_ESCAPE || ch == 'q' || ch == 'Q') {
+    if (reader.search_input) {
+        return reader_handle_search_input(ctx, ch);
+    }
+
+    if (ch == SOLAR_OS_KEY_APP_EXIT || ch == 'q' || ch == 'Q') {
         solar_os_context_request_exit(ctx);
         return true;
     }
     if (reader.error_only) {
+        if (ch == SOLAR_OS_KEY_ESCAPE) {
+            solar_os_context_request_exit(ctx);
+        }
         return true;
     }
 
     switch (ch) {
+    case SOLAR_OS_KEY_ESCAPE:
+        if (reader.match.valid || reader.search_status) {
+            reader.match.valid = false;
+            reader.search_status = false;
+            reader.message[0] = '\0';
+        } else {
+            solar_os_context_request_exit(ctx);
+        }
+        break;
     case SOLAR_OS_KEY_UP:
         reader_scroll_lines(ctx, -1);
         break;
@@ -1056,6 +1539,15 @@ static bool reader_handle_char(solar_os_context_t *ctx, char raw_ch)
     case 0x1f:
     case '-':
         reader_zoom(ctx, -1);
+        break;
+    case '/':
+        reader_start_search();
+        break;
+    case 'n':
+        (void)reader_run_search(ctx, true, true);
+        break;
+    case 'N':
+        (void)reader_run_search(ctx, false, true);
         break;
     default:
         break;

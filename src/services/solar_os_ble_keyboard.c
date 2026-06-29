@@ -1953,6 +1953,10 @@ static char hid_keycode_to_system_key(uint8_t keycode, uint8_t modifiers)
         return (char)SOLAR_OS_KEY_APP_EXIT;
     }
     if (ctrl && !alt) {
+        if (keyboard_layout != SOLAR_OS_BLE_KEYBOARD_LAYOUT_DE && keycode == 0x30) {
+            SOLAR_OS_LOGI(TAG, "mapped CTRL+] to app-exit key");
+            return (char)SOLAR_OS_KEY_APP_EXIT;
+        }
         if (keycode == 0x2e ||
             (keyboard_layout == SOLAR_OS_BLE_KEYBOARD_LAYOUT_DE && keycode == 0x30)) {
             return (char)SOLAR_OS_KEY_CTRL_PLUS;

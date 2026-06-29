@@ -1003,6 +1003,11 @@ static bool edit_event(solar_os_context_t *ctx, const solar_os_event_t *event)
     }
 
     const char ch = event->data.ch;
+    if ((uint8_t)ch == SOLAR_OS_KEY_APP_EXIT) {
+        solar_os_context_request_exit(ctx);
+        return true;
+    }
+
     if (editor.error_only) {
         if (ch == SOLAR_OS_KEY_ESCAPE) {
             solar_os_context_request_exit(ctx);
