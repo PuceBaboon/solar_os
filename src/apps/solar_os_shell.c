@@ -3383,12 +3383,6 @@ static bool shell_execute_line(solar_os_context_t *ctx,
         if (strcmp(argv[0], shell_builtin_commands[i].name) == 0) {
             shell_builtin_commands[i].handler(ctx, argc, argv);
             const bool should_prompt = !shell_session(ctx)->builtin_suppressed_prompt;
-            if (solar_os_shell_io_kind(shell_io(ctx)) == SOLAR_OS_SHELL_IO_KIND_PORT &&
-                solar_os_context_take_launch_request(ctx) != NULL) {
-                solar_os_shell_io_writeln(terminal(ctx),
-                                          "display foreground apps are only available on the display shell");
-                return true;
-            }
             return should_prompt;
         }
     }

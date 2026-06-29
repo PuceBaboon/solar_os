@@ -888,11 +888,6 @@ void solar_os_shell_cmd_setterm(solar_os_context_t *ctx, int argc, char **argv)
     solar_os_terminal_t *display = display_terminal(ctx);
 
     if (argc == 1) {
-        if (solar_os_shell_io_kind(term) == SOLAR_OS_SHELL_IO_KIND_PORT) {
-            solar_os_shell_io_writeln(term, "setterm: TUI is only available on the display shell");
-            setterm_print_usage(term);
-            return;
-        }
         const esp_err_t err = solar_os_shell_launch_setterm_tui(ctx);
         if (err != ESP_OK) {
             solar_os_shell_io_printf(term, "setterm: launch failed: %s\n", esp_err_to_name(err));

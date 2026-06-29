@@ -9,17 +9,11 @@
 
 #include "esp_err.h"
 #include "solar_os_keys.h"
-#include "solar_os_terminal.h"
 #include "solar_os_tui.h"
 #include "solar_os_wifi.h"
 
 #define WIFI_TUI_STATUS_MAX 96
 #define WIFI_TUI_REFRESH_MS 1000
-
-static solar_os_terminal_t *display_terminal(solar_os_context_t *ctx)
-{
-    return solar_os_shell_display_terminal(ctx);
-}
 
 typedef enum {
     WIFI_TUI_RADIO,
@@ -289,7 +283,7 @@ static void wifi_tui_render(void)
         wifi_tui_write_cell(status_row, 0, cols, wifi_tui.status, SOLAR_OS_TUI_ATTR_INVERSE);
     }
 
-    solar_os_terminal_set_cursor_visible(tui->terminal, false);
+    solar_os_tui_set_cursor_visible(tui, false);
     solar_os_tui_refresh(tui);
 }
 
@@ -435,15 +429,17 @@ static esp_err_t wifi_tui_start(solar_os_context_t *ctx)
         return err;
     }
     wifi_tui_set_status("enter acts, esc exits");
-    solar_os_terminal_set_cursor_visible(display_terminal(ctx), false);
+    solar_os_tui_set_cursor_visible(&wifi_tui.tui, false);
     wifi_tui_render();
     return ESP_OK;
 }
 
 static void wifi_tui_stop(solar_os_context_t *ctx)
 {
-    solar_os_terminal_set_cursor_visible(display_terminal(ctx), true);
-    solar_os_terminal_clear(display_terminal(ctx));
+    (void)ctx;
+    solar_os_tui_set_cursor_visible(&wifi_tui.tui, true);
+    solar_os_tui_clear(&wifi_tui.tui);
+    solar_os_tui_refresh(&wifi_tui.tui);
 }
 
 static bool wifi_tui_event(solar_os_context_t *ctx, const solar_os_event_t *event)

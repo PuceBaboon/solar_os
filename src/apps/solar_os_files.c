@@ -573,8 +573,8 @@ static void files_draw_bottom(size_t rows, size_t cols)
 
 static void files_render(solar_os_context_t *ctx)
 {
-    solar_os_terminal_set_cursor_visible(solar_os_context_terminal(ctx),
-                                         files.input_mode == FILES_INPUT_MKDIR);
+    (void)ctx;
+    solar_os_tui_set_cursor_visible(&files.tui, files.input_mode == FILES_INPUT_MKDIR);
     const size_t rows = solar_os_tui_rows(&files.tui);
     const size_t cols = solar_os_tui_cols(&files.tui);
     if (rows < 6 || cols < FILES_PANEL_MIN_WIDTH * 2U) {
@@ -1008,14 +1008,15 @@ static esp_err_t files_start(solar_os_context_t *ctx)
     }
 
     files_set_message("");
-    solar_os_terminal_set_cursor_visible(solar_os_context_terminal(ctx), false);
+    solar_os_tui_set_cursor_visible(&files.tui, false);
     files_render(ctx);
     return ESP_OK;
 }
 
 static void files_stop(solar_os_context_t *ctx)
 {
-    solar_os_terminal_set_cursor_visible(solar_os_context_terminal(ctx), true);
+    (void)ctx;
+    solar_os_tui_set_cursor_visible(&files.tui, true);
     files_pane_clear(&files.panes[0]);
     files_pane_clear(&files.panes[1]);
     memset(&files, 0, sizeof(files));

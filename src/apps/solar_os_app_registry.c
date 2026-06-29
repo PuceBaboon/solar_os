@@ -72,7 +72,7 @@ static const solar_os_app_registry_entry_t registered_apps[] = {
     {"arecord", "record WAV audio", &solar_os_arecord_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY},
 #endif
 #if SOLAR_OS_PACKAGE_APP_CHAT
-    {"chat", "gateway chat client", &solar_os_chat_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY},
+    {"chat", "gateway chat client", &solar_os_chat_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT},
 #endif
 #if SOLAR_OS_PACKAGE_APP_CURL
     {"curl", "HTTP client", &solar_os_curl_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT},
@@ -96,7 +96,7 @@ static const solar_os_app_registry_entry_t registered_apps[] = {
     {"edit", "text editor", &solar_os_edit_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT},
 #endif
 #if SOLAR_OS_PACKAGE_APP_FILES
-    {"files", "two-pane file manager", &solar_os_files_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY},
+    {"files", "two-pane file manager", &solar_os_files_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT},
 #endif
 #if SOLAR_OS_PACKAGE_APP_LESS
     {"less", "text file pager", &solar_os_less_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT},

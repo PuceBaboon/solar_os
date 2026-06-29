@@ -233,8 +233,7 @@ static void setterm_tui_render(void)
         solar_os_tui_move(tui, setterm_tui.selected + 1, cursor_col);
     }
 
-    solar_os_terminal_set_cursor_visible(tui->terminal,
-                                         setterm_tui.editing && setterm_tui.cursor_visible);
+    solar_os_tui_set_cursor_visible(tui, setterm_tui.editing && setterm_tui.cursor_visible);
     solar_os_tui_refresh(tui);
 }
 
@@ -485,15 +484,17 @@ static esp_err_t setterm_tui_start(solar_os_context_t *ctx)
     if (err != ESP_OK) {
         return err;
     }
-    solar_os_terminal_set_cursor_visible(display_terminal(ctx), false);
+    solar_os_tui_set_cursor_visible(&setterm_tui.tui, false);
     setterm_tui_render();
     return ESP_OK;
 }
 
 static void setterm_tui_stop(solar_os_context_t *ctx)
 {
-    solar_os_terminal_set_cursor_visible(display_terminal(ctx), true);
-    solar_os_terminal_clear(display_terminal(ctx));
+    (void)ctx;
+    solar_os_tui_set_cursor_visible(&setterm_tui.tui, true);
+    solar_os_tui_clear(&setterm_tui.tui);
+    solar_os_tui_refresh(&setterm_tui.tui);
 }
 
 static bool setterm_tui_event(solar_os_context_t *ctx, const solar_os_event_t *event)
@@ -517,8 +518,7 @@ static bool setterm_tui_event(solar_os_context_t *ctx, const solar_os_event_t *e
         if ((now_ms - setterm_tui.last_cursor_blink_ms) >= SETTERM_TUI_CURSOR_BLINK_MS) {
             setterm_tui.last_cursor_blink_ms = now_ms;
             setterm_tui.cursor_visible = !setterm_tui.cursor_visible;
-            solar_os_terminal_set_cursor_visible(display_terminal(setterm_tui.ctx),
-                                                 setterm_tui.cursor_visible);
+            solar_os_tui_set_cursor_visible(&setterm_tui.tui, setterm_tui.cursor_visible);
         }
         return true;
     }

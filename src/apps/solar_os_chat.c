@@ -923,7 +923,7 @@ static void chat_draw_input(size_t rows, size_t cols)
     const size_t input_row = rows - 1U;
     const uint8_t help_attr = SOLAR_OS_TUI_ATTR_INVERSE;
 
-    solar_os_terminal_set_cursor_visible(chat_app.tui.terminal, false);
+    solar_os_tui_set_cursor_visible(&chat_app.tui, false);
     solar_os_tui_hline(&chat_app.tui, sep_row, 0, cols, 0, SOLAR_OS_TUI_ATTR_NORMAL);
     chat_write_cell(help_row,
                     0,
@@ -957,8 +957,7 @@ static void chat_draw_input(size_t rows, size_t cols)
     solar_os_tui_move(&chat_app.tui,
                       input_row,
                       cursor_col < cols ? cursor_col : cols - 1U);
-    solar_os_terminal_set_cursor_visible(chat_app.tui.terminal,
-                                         chat_app.focus == CHAT_APP_FOCUS_MESSAGES);
+    solar_os_tui_set_cursor_visible(&chat_app.tui, chat_app.focus == CHAT_APP_FOCUS_MESSAGES);
 }
 
 static void chat_render(void)
@@ -1534,9 +1533,7 @@ static void chat_stop(solar_os_context_t *ctx)
 
     (void)solar_os_chat_disconnect();
     chat_free_buffers();
-    if (chat_app.tui.terminal != NULL) {
-        solar_os_terminal_set_cursor_visible(chat_app.tui.terminal, true);
-    }
+    solar_os_tui_set_cursor_visible(&chat_app.tui, true);
     memset(&chat_app, 0, sizeof(chat_app));
 }
 
