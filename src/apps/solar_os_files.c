@@ -87,6 +87,23 @@ static files_pane_t *files_other_pane(void)
     return &files.panes[(files.active ^ 1U) & 1U];
 }
 
+static bool files_mount_entry_name(const char *mount_point, const char **name)
+{
+    if (mount_point == NULL || mount_point[0] != '/' || name == NULL) {
+        return false;
+    }
+    if (strcmp(mount_point, "/") == 0) {
+        return false;
+    }
+
+    const char *entry = mount_point + 1;
+    if (entry[0] == '\0') {
+        return false;
+    }
+    *name = entry;
+    return true;
+}
+
 static const char *files_basename(const char *path)
 {
     if (path == NULL || path[0] == '\0') {
@@ -128,6 +145,10 @@ static bool files_parent_path(const char *path, char *out, size_t out_len)
     if (path == NULL || out == NULL || out_len == 0) {
         return false;
     }
+    if (strcmp(path, "/") == 0) {
+        strlcpy(out, "/", out_len);
+        return true;
+    }
     if (solar_os_storage_path_mount_point(path, mount, sizeof(mount)) != ESP_OK) {
         strlcpy(mount, solar_os_storage_mount_point(), sizeof(mount));
     }
@@ -142,7 +163,11 @@ static bool files_parent_path(const char *path, char *out, size_t out_len)
         len--;
     }
     if (len <= mount_len) {
-        strlcpy(out, mount, out_len);
+        if (!solar_os_storage_root_is_mounted() && strcmp(mount, "/") != 0) {
+            strlcpy(out, "/", out_len);
+        } else {
+            strlcpy(out, mount, out_len);
+        }
         return true;
     }
 
@@ -273,6 +298,41 @@ static esp_err_t files_pane_add(files_pane_t *pane,
     return ESP_OK;
 }
 
+static bool files_pane_has_name(const files_pane_t *pane, const char *name)
+{
+    if (pane == NULL || name == NULL) {
+        return false;
+    }
+
+    for (size_t i = 0; i < pane->count; i++) {
+        if (strcmp(pane->entries[i].name, name) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static esp_err_t files_pane_add_mount(files_pane_t *pane, const char *mount_point)
+{
+    const char *name = NULL;
+    if (!files_mount_entry_name(mount_point, &name) ||
+        files_pane_has_name(pane, name)) {
+        return ESP_OK;
+    }
+    return files_pane_add(pane, name, true, false, 0);
+}
+
+static void files_pane_reset_entries(files_pane_t *pane, const char *path)
+{
+    files_free(pane->entries);
+    pane->entries = NULL;
+    pane->count = 0;
+    pane->capacity = 0;
+    pane->cursor = 0;
+    pane->top = 0;
+    strlcpy(pane->path, path, sizeof(pane->path));
+}
+
 static bool files_path_is_root(const char *path)
 {
     char parent[SOLAR_OS_STORAGE_PATH_MAX];
@@ -298,6 +358,37 @@ static bool files_paths_equal(const char *a, const char *b)
     return a != NULL && b != NULL && a_len == b_len && strncmp(a, b, a_len) == 0;
 }
 
+static bool files_virtual_root_path(const char *path)
+{
+    return path != NULL && files_paths_equal(path, "/") && !solar_os_storage_root_is_mounted();
+}
+
+static esp_err_t files_pane_load_virtual_root(files_pane_t *pane)
+{
+    files_pane_reset_entries(pane, "/");
+
+    esp_err_t err = ESP_OK;
+    const size_t mount_count = solar_os_storage_mount_count();
+    for (size_t i = 0; i < mount_count; i++) {
+        solar_os_storage_mount_info_t mount;
+        if (!solar_os_storage_get_mount(i, &mount)) {
+            continue;
+        }
+
+        err = files_pane_add_mount(pane, mount.mount_point);
+        if (err != ESP_OK) {
+            return err;
+        }
+    }
+
+    if (pane->count > 1U) {
+        qsort(pane->entries, pane->count, sizeof(pane->entries[0]), files_entry_cmp);
+    }
+    pane->loaded = true;
+    pane->last_error = ESP_OK;
+    return ESP_OK;
+}
+
 static bool files_path_inside(const char *parent, const char *child)
 {
     if (parent == NULL || child == NULL) {
@@ -313,6 +404,9 @@ static esp_err_t files_pane_load(files_pane_t *pane, const char *path)
     if (pane == NULL || path == NULL || path[0] == '\0') {
         return ESP_ERR_INVALID_ARG;
     }
+    if (files_virtual_root_path(path)) {
+        return files_pane_load_virtual_root(pane);
+    }
 
     char normalized[SOLAR_OS_STORAGE_PATH_MAX];
     esp_err_t err = solar_os_storage_normalize_path(path, normalized, sizeof(normalized));
@@ -327,13 +421,7 @@ static esp_err_t files_pane_load(files_pane_t *pane, const char *path)
         return ESP_FAIL;
     }
 
-    files_free(pane->entries);
-    pane->entries = NULL;
-    pane->count = 0;
-    pane->capacity = 0;
-    pane->cursor = 0;
-    pane->top = 0;
-    strlcpy(pane->path, normalized, sizeof(pane->path));
+    files_pane_reset_entries(pane, normalized);
 
     if (!files_path_is_root(normalized)) {
         err = files_pane_add(pane, "..", true, true, 0);
@@ -852,6 +940,10 @@ static void files_copy_selected(void)
     char source[SOLAR_OS_STORAGE_PATH_MAX];
     char dest[SOLAR_OS_STORAGE_PATH_MAX];
 
+    if (files_virtual_root_path(source_pane->path) || files_virtual_root_path(dest_pane->path)) {
+        files_set_message("copy: open a mount first");
+        return;
+    }
     if (entry == NULL || entry->parent) {
         files_set_message("copy: no file selected");
         return;
@@ -886,6 +978,10 @@ static void files_move_selected(void)
     char source[SOLAR_OS_STORAGE_PATH_MAX];
     char dest[SOLAR_OS_STORAGE_PATH_MAX];
 
+    if (files_virtual_root_path(source_pane->path) || files_virtual_root_path(dest_pane->path)) {
+        files_set_message("move: open a mount first");
+        return;
+    }
     if (entry == NULL || entry->parent) {
         files_set_message("move: no file selected");
         return;
@@ -914,6 +1010,10 @@ static void files_move_selected(void)
 
 static void files_begin_mkdir(void)
 {
+    if (files_virtual_root_path(files_active_pane()->path)) {
+        files_set_message("mkdir: open a mount first");
+        return;
+    }
     files.input_mode = FILES_INPUT_MKDIR;
     files.input_len = 0;
     files.input[0] = '\0';
@@ -924,6 +1024,10 @@ static void files_begin_delete(void)
 {
     files_pane_t *pane = files_active_pane();
     files_entry_t *entry = files_selected_entry(pane);
+    if (files_virtual_root_path(pane->path)) {
+        files_set_message("delete: open a mount first");
+        return;
+    }
     if (entry == NULL || entry->parent) {
         files_set_message("delete: no file selected");
         return;

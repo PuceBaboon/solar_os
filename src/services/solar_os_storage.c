@@ -263,6 +263,119 @@ bool solar_os_storage_get_block(size_t index, solar_os_storage_block_t *block)
 #endif
 }
 
+static bool storage_fill_sd_mount(const solar_os_storage_block_t *block,
+                                  solar_os_storage_mount_info_t *mount)
+{
+    if (block == NULL || mount == NULL || !block->mounted || block->mount_point[0] == '\0') {
+        return false;
+    }
+
+    memset(mount, 0, sizeof(*mount));
+    strlcpy(mount->mount_point, block->mount_point, sizeof(mount->mount_point));
+    strlcpy(mount->name, block->name, sizeof(mount->name));
+    mount->type = SOLAR_OS_STORAGE_MOUNT_SD;
+    return true;
+}
+
+static bool storage_block_mount_point_seen(const char *mount_point)
+{
+    if (mount_point == NULL || mount_point[0] == '\0') {
+        return false;
+    }
+
+#if SOLAR_OS_BOARD_HAS_SD
+    const size_t count = solar_os_storage_block_count();
+    for (size_t i = 0; i < count; i++) {
+        solar_os_storage_block_t block;
+        if (solar_os_storage_get_block(i, &block) &&
+            block.mounted &&
+            strcmp(block.mount_point, mount_point) == 0) {
+            return true;
+        }
+    }
+#endif
+
+    return false;
+}
+
+size_t solar_os_storage_mount_count(void)
+{
+    size_t count = 0;
+
+#if SOLAR_OS_BOARD_HAS_SD
+    const size_t block_count = solar_os_storage_block_count();
+    for (size_t i = 0; i < block_count; i++) {
+        solar_os_storage_block_t block;
+        if (solar_os_storage_get_block(i, &block) &&
+            block.mounted &&
+            block.mount_point[0] != '\0') {
+            count++;
+        }
+    }
+    if (solar_os_storage_is_mounted() &&
+        !storage_block_mount_point_seen(solar_os_storage_mount_point())) {
+        count++;
+    }
+#endif
+
+    count += solar_os_ramfs_mount_count();
+    return count;
+}
+
+bool solar_os_storage_get_mount(size_t index, solar_os_storage_mount_info_t *mount)
+{
+    if (mount == NULL) {
+        return false;
+    }
+
+#if SOLAR_OS_BOARD_HAS_SD
+    const size_t block_count = solar_os_storage_block_count();
+    for (size_t i = 0; i < block_count; i++) {
+        solar_os_storage_block_t block;
+        if (!solar_os_storage_get_block(i, &block) ||
+            !block.mounted ||
+            block.mount_point[0] == '\0') {
+            continue;
+        }
+
+        if (index == 0) {
+            return storage_fill_sd_mount(&block, mount);
+        }
+        index--;
+    }
+
+    const char *default_mount = solar_os_storage_mount_point();
+    if (solar_os_storage_is_mounted() && !storage_block_mount_point_seen(default_mount)) {
+        if (index == 0) {
+            memset(mount, 0, sizeof(*mount));
+            strlcpy(mount->mount_point, default_mount, sizeof(mount->mount_point));
+            strlcpy(mount->name, "sd", sizeof(mount->name));
+            mount->type = SOLAR_OS_STORAGE_MOUNT_SD;
+            return true;
+        }
+        index--;
+    }
+#endif
+
+    solar_os_ramfs_info_t ramfs;
+    if (!solar_os_ramfs_get_info(index, &ramfs)) {
+        return false;
+    }
+
+    memset(mount, 0, sizeof(*mount));
+    strlcpy(mount->mount_point, ramfs.mount_point, sizeof(mount->mount_point));
+    strlcpy(mount->name, "ramfs", sizeof(mount->name));
+    mount->type = SOLAR_OS_STORAGE_MOUNT_RAMFS;
+    return true;
+}
+
+bool solar_os_storage_root_is_mounted(void)
+{
+    char mount[SOLAR_OS_STORAGE_MOUNT_POINT_MAX];
+    return solar_os_storage_path_mount_point("/", mount, sizeof(mount)) == ESP_OK &&
+        strcmp(mount, "/") == 0;
+}
+
 bool solar_os_storage_path_has_mount_prefix(const char *path)
 {
     char mount_point[SOLAR_OS_STORAGE_MOUNT_POINT_MAX];
