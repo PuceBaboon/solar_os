@@ -22,6 +22,7 @@ void solar_os_context_init(solar_os_context_t *ctx,
     ctx->shell_io = NULL;
     ctx->shell_session = NULL;
     ctx->requested_app = NULL;
+    ctx->launch_policy = SOLAR_OS_LAUNCH_REPLACE;
     ctx->exit_requested = false;
     ctx->sleep_requested = false;
     ctx->session_request = SOLAR_OS_SESSION_REQUEST_NONE;
@@ -173,7 +174,24 @@ esp_err_t solar_os_context_request_launch(solar_os_context_t *ctx,
                                           int argc,
                                           char **argv)
 {
+    return solar_os_context_request_launch_ex(ctx,
+                                              app,
+                                              argc,
+                                              argv,
+                                              SOLAR_OS_LAUNCH_REPLACE);
+}
+
+esp_err_t solar_os_context_request_launch_ex(solar_os_context_t *ctx,
+                                             const solar_os_app_t *app,
+                                             int argc,
+                                             char **argv,
+                                             solar_os_launch_policy_t policy)
+{
     if (ctx == NULL || app == NULL || argc < 0 || argc > SOLAR_OS_APP_ARG_MAX) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (policy != SOLAR_OS_LAUNCH_REPLACE &&
+        policy != SOLAR_OS_LAUNCH_CHILD_RETURN) {
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -189,6 +207,7 @@ esp_err_t solar_os_context_request_launch(solar_os_context_t *ctx,
     }
     ctx->argc = argc;
     ctx->requested_app = app;
+    ctx->launch_policy = policy;
     ctx->exit_requested = false;
     ctx->sleep_requested = false;
     ctx->graphics_active = false;
@@ -204,6 +223,17 @@ const solar_os_app_t *solar_os_context_take_launch_request(solar_os_context_t *c
     const solar_os_app_t *app = ctx->requested_app;
     ctx->requested_app = NULL;
     return app;
+}
+
+solar_os_launch_policy_t solar_os_context_take_launch_policy(solar_os_context_t *ctx)
+{
+    if (ctx == NULL) {
+        return SOLAR_OS_LAUNCH_REPLACE;
+    }
+
+    const solar_os_launch_policy_t policy = ctx->launch_policy;
+    ctx->launch_policy = SOLAR_OS_LAUNCH_REPLACE;
+    return policy;
 }
 
 void solar_os_context_request_exit(solar_os_context_t *ctx)

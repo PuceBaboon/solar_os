@@ -707,7 +707,11 @@ static bool files_launch_app(solar_os_context_t *ctx, const char *app_name, cons
     char *argv[] = {app_arg, path_arg};
     strlcpy(app_arg, app_name, sizeof(app_arg));
     strlcpy(path_arg, path, sizeof(path_arg));
-    const esp_err_t err = solar_os_context_request_launch(ctx, entry->app, 2, argv);
+    const esp_err_t err = solar_os_context_request_launch_ex(ctx,
+                                                             entry->app,
+                                                             2,
+                                                             argv,
+                                                             SOLAR_OS_LAUNCH_CHILD_RETURN);
     if (err != ESP_OK) {
         files_set_message(esp_err_to_name(err));
         return false;
@@ -1028,6 +1032,13 @@ static void files_stop(solar_os_context_t *ctx)
     memset(&files, 0, sizeof(files));
 }
 
+static void files_resume(solar_os_context_t *ctx)
+{
+    files_refresh_all();
+    solar_os_tui_set_cursor_visible(&files.tui, false);
+    files_render(ctx);
+}
+
 static bool files_event(solar_os_context_t *ctx, const solar_os_event_t *event)
 {
     if (event == NULL || event->type != SOLAR_OS_EVENT_CHAR) {
@@ -1149,7 +1160,9 @@ static bool files_event(solar_os_context_t *ctx, const solar_os_event_t *event)
 const solar_os_app_t solar_os_files_app = {
     .name = "files",
     .summary = "two-pane file manager",
+    .flags = SOLAR_OS_APP_FLAG_RESUMABLE,
     .start = files_start,
+    .resume = files_resume,
     .stop = files_stop,
     .event = files_event,
 };

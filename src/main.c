@@ -104,7 +104,10 @@ typedef struct {
     bool suspended;
     bool claimed;
     bool owns_terminal;
+    bool close_on_exit;
+    bool has_return_session;
     uint8_t id;
+    uint8_t return_session_id;
     const solar_os_app_t *app;
     solar_os_terminal_t *terminal;
     char title[APP_SESSION_TITLE_MAX];
@@ -112,6 +115,8 @@ typedef struct {
 
 static app_session_t app_sessions[APP_SESSION_MAX];
 static app_session_t *foreground_session;
+static bool legacy_return_session_valid;
+static uint8_t legacy_return_session_id;
 static bool alt_prefix_pending;
 static uint32_t session_overlay_until_ms;
 static char session_overlay_title[APP_SESSION_TITLE_MAX];
@@ -128,6 +133,7 @@ static void process_app_requests(void);
 static void maybe_enter_idle_sleep(void);
 static void update_status(void);
 static bool switch_to_app(const solar_os_app_t *app);
+static bool switch_to_app_with_policy(const solar_os_app_t *app, solar_os_launch_policy_t policy);
 static const char *app_display_name(const solar_os_app_t *app);
 static bool app_is_resumable(const solar_os_app_t *app);
 static void session_prepare_context(app_session_t *session);
@@ -1051,6 +1057,23 @@ static app_session_t *session_by_id(uint8_t id)
     return &app_sessions[id];
 }
 
+static app_session_t *session_return_target(uint8_t session_id, const app_session_t *self)
+{
+    app_session_t *target = session_by_id(session_id);
+    if (target == NULL || target == self || target->app == NULL) {
+        return NULL;
+    }
+    return target;
+}
+
+static bool switch_to_session_or_shell(app_session_t *session)
+{
+    if (session != NULL && session->used && session->app != NULL) {
+        return switch_to_session(session, false);
+    }
+    return switch_to_session(ensure_shell_session(), false);
+}
+
 static app_session_t *session_find_by_app(const solar_os_app_t *app)
 {
     if (app == NULL) {
@@ -1247,6 +1270,7 @@ static void stop_legacy_foreground(void)
     }
     display_release_app(foreground_app);
     solar_os_context_set_graphics_active(&os_ctx, false);
+    legacy_return_session_valid = false;
 }
 
 static void suspend_foreground_session(void)
@@ -1405,8 +1429,61 @@ static bool switch_to_app(const solar_os_app_t *app)
     solar_os_context_set_graphics_active(&os_ctx, false);
     foreground_app = NULL;
     foreground_session = NULL;
-    (void)switch_to_session(ensure_shell_session(), false);
+    app_session_t *return_session = legacy_return_session_valid ?
+        session_return_target(legacy_return_session_id, NULL) :
+        NULL;
+    legacy_return_session_valid = false;
+    (void)switch_to_session_or_shell(return_session);
     return false;
+}
+
+static bool switch_to_child_app(const solar_os_app_t *app)
+{
+    if (app == NULL) {
+        return false;
+    }
+    if (!launch_should_use_display_sessions() ||
+        foreground_session == NULL ||
+        app == solar_os_shell_app()) {
+        return switch_to_app(app);
+    }
+
+    app_session_t *parent = foreground_session;
+    if (app_is_resumable(app)) {
+        app_session_t *session = session_find_by_app(app);
+        if (session == NULL) {
+            session = session_alloc(app);
+        }
+        if (session == NULL) {
+            SOLAR_OS_LOGW(TAG, "No free child app session for %s", app_display_name(app));
+            return false;
+        }
+        if (session == parent) {
+            return true;
+        }
+        session->close_on_exit = true;
+        session->has_return_session = true;
+        session->return_session_id = parent->id;
+        return switch_to_session(session, false);
+    }
+
+    legacy_return_session_valid = true;
+    legacy_return_session_id = parent->id;
+    const bool switched = switch_to_app(app);
+    if (!switched) {
+        legacy_return_session_valid = false;
+    }
+    return switched;
+}
+
+static bool switch_to_app_with_policy(const solar_os_app_t *app, solar_os_launch_policy_t policy)
+{
+    if (policy == SOLAR_OS_LAUNCH_CHILD_RETURN) {
+        return switch_to_child_app(app);
+    }
+
+    legacy_return_session_valid = false;
+    return switch_to_app(app);
 }
 
 static void session_print_list_to_io(solar_os_shell_io_t *io, void *user)
@@ -1443,6 +1520,10 @@ static bool close_session(app_session_t *session, bool preserve_context)
     }
 
     const bool was_foreground = session == foreground_session;
+    const uint8_t closing_id = session->id;
+    app_session_t *return_session = was_foreground && session->has_return_session ?
+        session_return_target(session->return_session_id, session) :
+        NULL;
     solar_os_terminal_t *previous_terminal = NULL;
     solar_os_shell_io_t *previous_shell_io = NULL;
     solar_os_shell_session_t *previous_shell_session = NULL;
@@ -1467,8 +1548,19 @@ static bool close_session(app_session_t *session, bool preserve_context)
     session_free_terminal(session);
     memset(session, 0, sizeof(*session));
 
+    for (size_t i = 0; i < APP_SESSION_MAX; i++) {
+        if (app_sessions[i].used &&
+            app_sessions[i].has_return_session &&
+            app_sessions[i].return_session_id == closing_id) {
+            app_sessions[i].has_return_session = false;
+        }
+    }
+    if (legacy_return_session_valid && legacy_return_session_id == closing_id) {
+        legacy_return_session_valid = false;
+    }
+
     if (was_foreground) {
-        return switch_to_session(ensure_shell_session(), false);
+        return switch_to_session_or_shell(return_session);
     }
     if (preserve_context) {
         terminal = previous_terminal;
@@ -1579,16 +1671,21 @@ static void process_app_requests(void)
                       foreground_app != NULL && foreground_app->name != NULL ? foreground_app->name : "(none)");
         if (foreground_session != NULL &&
             foreground_session->app != solar_os_shell_app() &&
-            app_is_resumable(foreground_session->app)) {
+            (app_is_resumable(foreground_session->app) || foreground_session->close_on_exit)) {
             (void)close_session(foreground_session, false);
         } else if (foreground_app != solar_os_shell_app()) {
-            switch_to_app(solar_os_shell_app());
+            app_session_t *return_session = legacy_return_session_valid ?
+                session_return_target(legacy_return_session_id, NULL) :
+                NULL;
+            legacy_return_session_valid = false;
+            (void)switch_to_session_or_shell(return_session);
         }
     }
 
     const solar_os_app_t *requested_app = solar_os_context_take_launch_request(&os_ctx);
     if (requested_app != NULL) {
-        if (!switch_to_app(requested_app)) {
+        const solar_os_launch_policy_t policy = solar_os_context_take_launch_policy(&os_ctx);
+        if (!switch_to_app_with_policy(requested_app, policy)) {
             display_prompt_after_failed_launch();
         }
     }

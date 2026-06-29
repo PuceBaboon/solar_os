@@ -22,6 +22,11 @@ typedef void (*solar_os_session_list_fn)(solar_os_shell_io_t *io, void *user);
 #define SOLAR_OS_APP_FLAG_RESUMABLE (1U << 0)
 
 typedef enum {
+    SOLAR_OS_LAUNCH_REPLACE,
+    SOLAR_OS_LAUNCH_CHILD_RETURN,
+} solar_os_launch_policy_t;
+
+typedef enum {
     SOLAR_OS_SESSION_REQUEST_NONE,
     SOLAR_OS_SESSION_REQUEST_LIST,
     SOLAR_OS_SESSION_REQUEST_FG,
@@ -34,6 +39,7 @@ typedef struct {
     solar_os_shell_io_t *shell_io;
     solar_os_shell_session_t *shell_session;
     const solar_os_app_t *requested_app;
+    solar_os_launch_policy_t launch_policy;
     bool exit_requested;
     bool sleep_requested;
     solar_os_session_request_type_t session_request;
@@ -105,7 +111,13 @@ esp_err_t solar_os_context_request_launch(solar_os_context_t *ctx,
                                           const solar_os_app_t *app,
                                           int argc,
                                           char **argv);
+esp_err_t solar_os_context_request_launch_ex(solar_os_context_t *ctx,
+                                             const solar_os_app_t *app,
+                                             int argc,
+                                             char **argv,
+                                             solar_os_launch_policy_t policy);
 const solar_os_app_t *solar_os_context_take_launch_request(solar_os_context_t *ctx);
+solar_os_launch_policy_t solar_os_context_take_launch_policy(solar_os_context_t *ctx);
 void solar_os_context_request_exit(solar_os_context_t *ctx);
 bool solar_os_context_take_exit_request(solar_os_context_t *ctx);
 void solar_os_context_request_sleep(solar_os_context_t *ctx);

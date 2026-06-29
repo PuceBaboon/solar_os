@@ -271,6 +271,7 @@ static void shell_job_process_requests(shell_job_state_t *state)
     if (requested_app == NULL) {
         return;
     }
+    (void)solar_os_context_take_launch_policy(&state->ctx);
 
     if (shell_job_foreground_app(state) != NULL) {
         solar_os_shell_io_writeln(solar_os_shell_session_io(state->session),
