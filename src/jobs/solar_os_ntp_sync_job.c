@@ -233,6 +233,10 @@ static esp_err_t ntp_sync_start(solar_os_context_t *ctx, int argc, char **argv)
              ntp_job.once ? "once" : "periodic",
              (unsigned)interval_sec,
              ntp_job.server);
+    (void)solar_os_jobs_note_resource(solar_os_ntp_sync_job.name,
+                                      SOLAR_OS_JOB_RESOURCE_NET,
+                                      ntp_job.server,
+                                      "ntp");
     return ESP_OK;
 }
 

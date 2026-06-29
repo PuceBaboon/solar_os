@@ -8,6 +8,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "solar_os_jobs.h"
 #include "solar_os_log.h"
 #include "solar_os_port.h"
 
@@ -194,11 +195,11 @@ static esp_err_t bridge_job_start(solar_os_context_t *ctx, int argc, char **argv
         return err;
     }
 
-    err = solar_os_port_claim(argv[1], "bridge", &bridge_job.port_a);
+    err = solar_os_jobs_claim_port(solar_os_bridge_job.name, argv[1], &bridge_job.port_a);
     if (err != ESP_OK) {
         return err;
     }
-    err = solar_os_port_claim(argv[2], "bridge", &bridge_job.port_b);
+    err = solar_os_jobs_claim_port(solar_os_bridge_job.name, argv[2], &bridge_job.port_b);
     if (err != ESP_OK) {
         (void)solar_os_port_release(&bridge_job.port_a);
         return err;

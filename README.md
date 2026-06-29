@@ -57,8 +57,8 @@ and network tools without a display or onboard peripherals.
   board KEY profile enabled
 
 On headless builds, SolarOS starts the primary shell on `uart0` when UART is
-available. `cdc0` remains available for a later shell job, log job, bridge job,
-or host-side tooling.
+available. `cdc0` remains available for a later port shell session, log job,
+bridge job, or host-side tooling.
 
 ## Build
 
@@ -149,6 +149,8 @@ Useful shell behavior:
 - `help` lists built-in shell commands.
 - `pkg` shows the compiled firmware flavor and package set.
 - `apps` lists foreground applications.
+- `sessions`, `fg <id>`, and `close <id>` manage resumable foreground app
+  sessions on display builds.
 - Tab completes commands, subcommands, and filesystem paths where applicable.
 - Up/Down browse command history.
 - Left/Right edit the current command line.
@@ -185,9 +187,10 @@ Examples:
 ```text
 port list
 port status cdc0
-job start shell cdc0
-job start shell uart0
-job stop shell
+session create shell cdc0
+session create shell uart0
+sessions
+close 16
 ```
 
 Port shells are VT100-style shells over the selected byte stream. Text-capable apps marked as port-capable can run there; display-only TUI/graphics apps remain on the board display. On a port shell, `Ctrl+]` is the foreground app exit key. On the display shell, the foreground app exit chord remains `CTRL+ALT+DEL`.
@@ -202,6 +205,7 @@ System:
 - `uptime`
 - `sleep`
 - `power [status|profile|idle|key|sleep]`: inspect power state, select runtime performance policy, configure display-shell idle sleep, configure KEY short-press behavior, or enter light sleep.
+- `session [list|create|fg|switch|close]`: manage foreground app sessions and port shell sessions.
 - `jobs`
 - `job [status|start|stop]`: control background jobs; job-specific arguments follow the job name.
 - `port [list|status]`: inspect registered byte-stream ports and current owners.
@@ -372,7 +376,6 @@ Jobs run in the background while a foreground app or shell remains active.
 - `httpd`: Serve static files from a folder. Start with `job start httpd <folder>`; relative folders resolve under the default SD mount point.
 - `log`: Stream SolarOS log entries to a byte-stream port or SD file. Start with `job start log <port> [error|warn|info|debug]` or `job start log file <path> [error|warn|info|debug]`.
 - `ntp-sync`: Sync RTC time from NTP. Start with `job start ntp-sync [once] [interval-sec] [server]`; defaults are `60` and `pool.ntp.org`. With `once`, the job retries at the interval until the first successful sync, then stops itself.
-- `shell`: Start a VT100 shell on a byte-stream port. Start with `job start shell <port>`.
 - `slip`: Start an IPv4 SLIP gateway on a byte-stream port. Start with `job start slip [port] [baud] [local-ip] [peer-ip] [netmask]`; defaults are `uart0`, `115200`, `192.168.7.1`, `192.168.7.2`, and `255.255.255.252`. The peer should use the local IP as its gateway. NAT is enabled on the SLIP-facing interface.
 
 Examples:
@@ -388,7 +391,18 @@ job stop log
 job status log
 ```
 
-Only one instance of each built-in job is active at a time. Starting the same job name again stops the existing instance and starts it with the new arguments.
+Only one instance of each built-in job is active at a time. Starting the same job name again stops the existing instance and starts it with the new arguments. `jobs` prints a compact table for the built-in display terminal:
+
+```text
+NAME         STATE    KIND        EVT  TICKS RES
+batmon       running  background  tick    17   1
+log          stopped  background  tick     0   0
+```
+
+Use `job status <name>` to see the job summary, stable owner string, last error,
+and claimed resources. Job-owned resources use owner strings such as `job:log`,
+so port conflicts can be reported as `job log owns cdc0` instead of a raw error
+code.
 
 ## Logs
 
@@ -402,7 +416,7 @@ job start log uart0 debug
 job start log file /.shell/log info
 ```
 
-The file form resolves shell-style paths, so `/.shell/log` and `/sdcard/.shell/log` both target the default SD card mount. If a port is already owned by a shell or another job, the log job will fail until that owner releases it.
+The file form resolves shell-style paths, so `/.shell/log` and `/sdcard/.shell/log` both target the default SD card mount. If a port is already owned by a shell, app, or another job, the log job will fail until that owner releases it.
 
 ## Built-In Applications
 
@@ -425,7 +439,10 @@ Applications are launched by typing their name at the shell prompt.
 - `com`: Serial terminal for the exposed UART pins.
 - `view`: Image viewer for baseline/progressive JPG/JPEG, BMP, and Netpbm PBM/PGM/PPM files. Use `view [-fit|-actual] <image>`; `f` toggles fit/actual size and cursor keys pan.
 
-Only one foreground application runs at a time. Apps use the SolarOS context and service APIs instead of talking directly to hardware drivers.
+On display builds, foreground applications can be suspended into sessions and
+resumed with `fg <id>`. Only one foreground session is visible at a time. Apps
+use the SolarOS context and service APIs instead of talking directly to hardware
+drivers.
 
 Application registry capabilities:
 
@@ -494,16 +511,21 @@ The code is organized around the boundary that apps should use services, not boa
 ```text
 src/
   apps/           shell-launched foreground apps
-  jobs/           background job registry
+  jobs/           background job implementations and registry
   drivers/        display, I2C, SD, RTC, sensors, UART, ADC, PWM
-  services/       terminal, storage, time, streams, sensors, BLE, Wi-Fi, SSH, SCP, GPIO, ADC, PWM
-  solar_os.h      common app/job context and foreground app API
-  solar_os_jobs.c background job lifecycle and tick dispatch
+  services/       terminal, sessions, storage, time, streams, sensors, BLE, Wi-Fi, SSH, SCP, GPIO, ADC, PWM
+  solar_os.h      common app/job context and app/job API
+  solar_os_jobs.c job lifecycle, owner/resource model, and tick dispatch
 ```
 
 The shell command parser currently lives in the shell app. Board and build configuration live in `boards/`, `platformio.ini`, `sdkconfig.defaults`, and target headers under `include/boards/`. Runtime code includes `solar_os_board.h` instead of a board-specific header.
 
 The important rule is that drivers own hardware detail, services own policy, and apps and jobs use services. That lets shell commands, foreground applications, and background jobs share the same behavior for storage, terminal rendering, networking, identity, time, and input.
+
+Foreground app sessions and port shells are managed by the sessions service.
+Background jobs are for autonomous work such as logging, DAQ, HTTP serving,
+SLIP, NTP sync, and chatd. Jobs publish stable owner strings and resource claims
+so ports, files, streams, and network listeners can be inspected consistently.
 
 Document-oriented apps use `services/solar_os_doc.c`, a PSRAM-first Markdown/plain-text document model with blocks, inline runs, source anchors, and retained graphics layout lines/runs. `reader` is the current graphics document app; ZIP, EPUB, RTF, and a future writer can build on the same service instead of each app inventing its own parser and layout path. The graphics font registry uses the generated default font family across document sizes, including regular, bold, italic, and bold-italic faces.
 

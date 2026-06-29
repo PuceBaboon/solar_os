@@ -674,23 +674,60 @@ static bool files_path_has_suffix(const char *path, const char *suffix)
     return true;
 }
 
+static bool files_app_available(const char *app_name)
+{
+    const solar_os_app_registry_entry_t *entry = solar_os_app_registry_find(app_name);
+    return entry != NULL && entry->app != NULL;
+}
+
 static const char *files_default_viewer(const char *path)
 {
-#if SOLAR_OS_PACKAGE_MEDIA
-    if (files_path_has_suffix(path, ".png") ||
-        files_path_has_suffix(path, ".jpg") ||
-        files_path_has_suffix(path, ".jpeg") ||
-        files_path_has_suffix(path, ".gif") ||
-        files_path_has_suffix(path, ".webp") ||
-        files_path_has_suffix(path, ".bmp")) {
+    if (files_app_available("view") &&
+        (files_path_has_suffix(path, ".png") ||
+         files_path_has_suffix(path, ".jpg") ||
+         files_path_has_suffix(path, ".jpeg") ||
+         files_path_has_suffix(path, ".gif") ||
+         files_path_has_suffix(path, ".webp") ||
+         files_path_has_suffix(path, ".bmp") ||
+         files_path_has_suffix(path, ".pnm") ||
+         files_path_has_suffix(path, ".pbm") ||
+         files_path_has_suffix(path, ".pgm") ||
+         files_path_has_suffix(path, ".ppm"))) {
         return "view";
     }
-#endif
-    if (files_path_has_suffix(path, ".md") ||
-        files_path_has_suffix(path, ".markdown") ||
-        files_path_has_suffix(path, ".epub")) {
+
+    if (files_app_available("aplay") &&
+        (files_path_has_suffix(path, ".wav") ||
+         files_path_has_suffix(path, ".mp3"))) {
+        return "aplay";
+    }
+
+    if (files_app_available("sheet") &&
+        files_path_has_suffix(path, ".csv")) {
+        return "sheet";
+    }
+
+    if (files_app_available("python") &&
+        (files_path_has_suffix(path, ".py") ||
+         files_path_has_suffix(path, ".pyw") ||
+         files_path_has_suffix(path, ".mpy"))) {
+        return "python";
+    }
+
+    if (files_app_available("lua") &&
+        files_path_has_suffix(path, ".lua")) {
+        return "lua";
+    }
+
+    if (files_app_available("reader") &&
+        (files_path_has_suffix(path, ".md") ||
+         files_path_has_suffix(path, ".markdown") ||
+         files_path_has_suffix(path, ".epub") ||
+         files_path_has_suffix(path, ".txt") ||
+         files_path_has_suffix(path, ".text"))) {
         return "reader";
     }
+
     return "less";
 }
 
@@ -707,7 +744,11 @@ static bool files_launch_app(solar_os_context_t *ctx, const char *app_name, cons
     char *argv[] = {app_arg, path_arg};
     strlcpy(app_arg, app_name, sizeof(app_arg));
     strlcpy(path_arg, path, sizeof(path_arg));
-    const esp_err_t err = solar_os_context_request_launch(ctx, entry->app, 2, argv);
+    const esp_err_t err = solar_os_context_request_launch_ex(ctx,
+                                                             entry->app,
+                                                             2,
+                                                             argv,
+                                                             SOLAR_OS_LAUNCH_CHILD_RETURN);
     if (err != ESP_OK) {
         files_set_message(esp_err_to_name(err));
         return false;
@@ -1028,6 +1069,13 @@ static void files_stop(solar_os_context_t *ctx)
     memset(&files, 0, sizeof(files));
 }
 
+static void files_resume(solar_os_context_t *ctx)
+{
+    files_refresh_all();
+    solar_os_tui_set_cursor_visible(&files.tui, false);
+    files_render(ctx);
+}
+
 static bool files_event(solar_os_context_t *ctx, const solar_os_event_t *event)
 {
     if (event == NULL || event->type != SOLAR_OS_EVENT_CHAR) {
@@ -1149,7 +1197,9 @@ static bool files_event(solar_os_context_t *ctx, const solar_os_event_t *event)
 const solar_os_app_t solar_os_files_app = {
     .name = "files",
     .summary = "two-pane file manager",
+    .flags = SOLAR_OS_APP_FLAG_RESUMABLE,
     .start = files_start,
+    .resume = files_resume,
     .stop = files_stop,
     .event = files_event,
 };

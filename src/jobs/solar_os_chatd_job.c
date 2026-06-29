@@ -19,6 +19,7 @@
 #include "lwip/inet.h"
 #include "lwip/sockets.h"
 #include "solar_os_chat.h"
+#include "solar_os_jobs.h"
 #include "solar_os_log.h"
 #include "solar_os_memory.h"
 #include "solar_os_storage.h"
@@ -1621,6 +1622,19 @@ static esp_err_t chatd_job_start(solar_os_context_t *ctx, int argc, char **argv)
         chatd_job.running = false;
         chatd_job.last_error = ESP_ERR_NO_MEM;
         return ESP_ERR_NO_MEM;
+    }
+
+    char port_name[16];
+    snprintf(port_name, sizeof(port_name), "tcp:%u", (unsigned)chatd_job.port);
+    (void)solar_os_jobs_note_resource(solar_os_chatd_job.name,
+                                      SOLAR_OS_JOB_RESOURCE_NET,
+                                      port_name,
+                                      "listen");
+    if (chatd_job.history_path[0] != '\0') {
+        (void)solar_os_jobs_note_resource(solar_os_chatd_job.name,
+                                          SOLAR_OS_JOB_RESOURCE_FILE,
+                                          chatd_job.history_path,
+                                          "append");
     }
 
     return ESP_OK;

@@ -20,6 +20,7 @@
 #include "lwip/netif.h"
 #include "lwip/opt.h"
 #include "lwip/pbuf.h"
+#include "solar_os_jobs.h"
 #include "solar_os_log.h"
 #include "solar_os_memory.h"
 #include "solar_os_port.h"
@@ -717,7 +718,7 @@ static esp_err_t slip_job_start(solar_os_context_t *ctx, int argc, char **argv)
         return err;
     }
 
-    err = solar_os_port_claim(config.port_name, "slip", &slip_job.port);
+    err = solar_os_jobs_claim_port(solar_os_slip_job.name, config.port_name, &slip_job.port);
     if (err != ESP_OK) {
         return err;
     }
@@ -750,6 +751,17 @@ static esp_err_t slip_job_start(solar_os_context_t *ctx, int argc, char **argv)
         slip_cleanup();
         return err;
     }
+
+    char network[96];
+    char local_ip[IP4ADDR_STRLEN_MAX];
+    char peer_ip[IP4ADDR_STRLEN_MAX];
+    ip4addr_ntoa_r(&config.local_ip, local_ip, sizeof(local_ip));
+    ip4addr_ntoa_r(&config.peer_ip, peer_ip, sizeof(peer_ip));
+    snprintf(network, sizeof(network), "%s->%s", local_ip, peer_ip);
+    (void)solar_os_jobs_note_resource(solar_os_slip_job.name,
+                                      SOLAR_OS_JOB_RESOURCE_NET,
+                                      network,
+                                      "ipv4");
 
     if (xTaskCreate(slip_task,
                     "slip_job",

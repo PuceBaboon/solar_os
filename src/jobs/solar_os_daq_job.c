@@ -455,6 +455,14 @@ static esp_err_t daq_start(solar_os_context_t *ctx, int argc, char **argv)
     daq.raw = config.raw;
     daq.last_error = ESP_OK;
     daq.running = true;
+    (void)solar_os_jobs_note_resource(solar_os_daq_job.name,
+                                      SOLAR_OS_JOB_RESOURCE_FILE,
+                                      daq.path,
+                                      daq.raw ? "raw" : "csv");
+    (void)solar_os_jobs_note_resource(solar_os_daq_job.name,
+                                      SOLAR_OS_JOB_RESOURCE_STREAM,
+                                      daq.stream_list,
+                                      daq.raw ? "bytes" : "scalar");
 
     SOLAR_OS_LOGI(TAG,
                   "started: %s -> %s interval=%" PRIu32 "ms%s%s",

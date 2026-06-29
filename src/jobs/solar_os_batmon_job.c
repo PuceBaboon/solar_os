@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "solar_os_jobs.h"
 #include "solar_os_log.h"
 #include "solar_os_battery.h"
 
@@ -167,6 +168,10 @@ static esp_err_t batmon_start(solar_os_context_t *ctx, int argc, char **argv)
     batmon.last_error = solar_os_battery_monitor_start(batmon.interval_ms);
 
     SOLAR_OS_LOGI(TAG, "started: interval=%" PRIu32 "s", interval_sec);
+    (void)solar_os_jobs_note_resource(solar_os_batmon_job.name,
+                                      SOLAR_OS_JOB_RESOURCE_CUSTOM,
+                                      "battery",
+                                      "monitor");
     return batmon.last_error;
 }
 

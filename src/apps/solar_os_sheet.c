@@ -14,8 +14,8 @@
 #include "esp_err.h"
 #include "esp_heap_caps.h"
 #include "solar_os_keys.h"
-#include "solar_os_shell_io.h"
 #include "solar_os_storage.h"
+#include "solar_os_tui.h"
 
 #define SHEET_MAX_COLS 32U
 #define SHEET_CELL_MAX 72U
@@ -45,6 +45,7 @@ typedef struct {
     bool running;
     bool error_only;
     sheet_input_mode_t input_mode;
+    solar_os_tui_t tui;
     char path[SOLAR_OS_STORAGE_PATH_MAX];
     char display_name[SOLAR_OS_STORAGE_PATH_MAX];
     char headers[SHEET_MAX_COLS][SHEET_CELL_MAX];
@@ -65,7 +66,6 @@ typedef struct {
 
 static sheet_state_t *sheet_state;
 #define sheet (*sheet_state)
-static solar_os_shell_io_t sheet_fallback_io;
 
 static sheet_state_t *sheet_alloc_state(void)
 {
@@ -75,17 +75,6 @@ static sheet_state_t *sheet_alloc_state(void)
         state = heap_caps_calloc(1, sizeof(*state), MALLOC_CAP_8BIT);
     }
     return state;
-}
-
-static solar_os_shell_io_t *sheet_io(solar_os_context_t *ctx)
-{
-    solar_os_shell_io_t *io = solar_os_context_shell_io(ctx);
-    if (io == NULL || solar_os_shell_io_kind(io) == SOLAR_OS_SHELL_IO_KIND_NONE) {
-        solar_os_shell_io_init_terminal(&sheet_fallback_io, solar_os_context_terminal(ctx));
-        solar_os_context_set_shell_io(ctx, &sheet_fallback_io);
-        io = &sheet_fallback_io;
-    }
-    return io;
 }
 
 static bool sheet_is_printable(uint8_t ch)
@@ -323,62 +312,101 @@ static esp_err_t sheet_index_file(void)
     return ESP_OK;
 }
 
-static void sheet_write_inverse_line(solar_os_shell_io_t *io, const char *text)
+static size_t sheet_utf8_char_len(unsigned char ch)
 {
-    const size_t cols = solar_os_shell_io_cols(io);
-    size_t written = 0;
+    if (ch < 0x80U) {
+        return 1;
+    }
+    if ((ch & 0xe0U) == 0xc0U) {
+        return 2;
+    }
+    if ((ch & 0xf0U) == 0xe0U) {
+        return 3;
+    }
+    if ((ch & 0xf8U) == 0xf0U) {
+        return 4;
+    }
+    return 1;
+}
 
-    solar_os_shell_io_set_inverse(io, true);
-    if (text != NULL) {
-        while (text[written] != '\0' && written < cols) {
-            solar_os_shell_io_put_char(io,
-                                       sheet_is_printable((uint8_t)text[written]) ?
-                                       text[written] :
-                                       '.');
-            written++;
+static void sheet_clip_text(const char *text, size_t cells, char *out, size_t out_len)
+{
+    if (out == NULL || out_len == 0) {
+        return;
+    }
+    out[0] = '\0';
+    if (text == NULL || cells == 0) {
+        return;
+    }
+
+    size_t in = 0;
+    size_t out_pos = 0;
+    size_t used_cells = 0;
+    while (text[in] != '\0' && used_cells < cells && out_pos + 1U < out_len) {
+        size_t char_len = sheet_utf8_char_len((unsigned char)text[in]);
+        if (char_len == 0 || out_pos + char_len >= out_len) {
+            break;
         }
+        for (size_t i = 1; i < char_len; i++) {
+            if (((unsigned char)text[in + i] & 0xc0U) != 0x80U) {
+                char_len = 1;
+                break;
+            }
+        }
+        if (char_len == 1 && !sheet_is_printable((uint8_t)text[in])) {
+            out[out_pos++] = '.';
+            in++;
+        } else {
+            memcpy(&out[out_pos], &text[in], char_len);
+            out_pos += char_len;
+            in += char_len;
+        }
+        used_cells++;
     }
-    while (written < cols) {
-        solar_os_shell_io_put_char(io, ' ');
-        written++;
-    }
-    solar_os_shell_io_set_inverse(io, false);
+    out[out_pos] = '\0';
 }
 
-static void sheet_write_padded(solar_os_shell_io_t *io,
-                               const char *text,
-                               size_t width,
-                               bool inverse,
-                               bool bold)
+static void sheet_write_cell(size_t row,
+                             size_t col,
+                             size_t width,
+                             const char *text,
+                             uint8_t attr)
 {
-    size_t written = 0;
+    const size_t rows = solar_os_tui_rows(&sheet.tui);
+    const size_t cols = solar_os_tui_cols(&sheet.tui);
+    char clipped[SHEET_LINE_MAX];
 
-    solar_os_shell_io_set_inverse(io, inverse);
-    solar_os_shell_io_set_bold(io, bold);
-    while (text != NULL && text[written] != '\0' && written < width) {
-        solar_os_shell_io_put_char(io,
-                                   sheet_is_printable((uint8_t)text[written]) ?
-                                   text[written] :
-                                   '.');
-        written++;
+    if (row >= rows || col >= cols || width == 0) {
+        return;
     }
-    while (written < width) {
-        solar_os_shell_io_put_char(io, ' ');
-        written++;
+    if (col + width > cols) {
+        width = cols - col;
     }
-    solar_os_shell_io_set_bold(io, false);
-    solar_os_shell_io_set_inverse(io, false);
+    if (width == 0) {
+        return;
+    }
+
+    solar_os_tui_fill(&sheet.tui, row, col, 1, width, ' ', attr);
+    sheet_clip_text(text, width, clipped, sizeof(clipped));
+    if (clipped[0] != '\0') {
+        solar_os_tui_addstr(&sheet.tui, row, col, clipped, attr);
+    }
 }
 
-static size_t sheet_body_rows(solar_os_shell_io_t *io)
+static void sheet_write_line(size_t row, const char *text, uint8_t attr)
 {
-    const size_t rows = solar_os_shell_io_rows(io);
+    sheet_write_cell(row, 0, solar_os_tui_cols(&sheet.tui), text, attr);
+}
+
+static size_t sheet_body_rows(void)
+{
+    const size_t rows = solar_os_tui_rows(&sheet.tui);
     return rows > 3U ? rows - 3U : 1U;
 }
 
-static size_t sheet_visible_cols(solar_os_shell_io_t *io)
+static size_t sheet_visible_cols(void)
 {
-    const size_t cols = solar_os_shell_io_cols(io);
+    const size_t cols = solar_os_tui_cols(&sheet.tui);
     if (cols <= SHEET_ROWNUM_WIDTH + 1U) {
         return 1;
     }
@@ -389,7 +417,7 @@ static size_t sheet_visible_cols(solar_os_shell_io_t *io)
     return visible;
 }
 
-static void sheet_clamp_view(solar_os_shell_io_t *io)
+static void sheet_clamp_view(void)
 {
     if (sheet.col_count == 0) {
         sheet.cursor_col = 0;
@@ -402,14 +430,14 @@ static void sheet_clamp_view(solar_os_shell_io_t *io)
         sheet.cursor_row = sheet.row_count - 1U;
     }
 
-    const size_t rows = sheet_body_rows(io);
+    const size_t rows = sheet_body_rows();
     if (sheet.cursor_row < sheet.row_offset) {
         sheet.row_offset = sheet.cursor_row;
     } else if (sheet.cursor_row >= sheet.row_offset + rows) {
         sheet.row_offset = sheet.cursor_row - rows + 1U;
     }
 
-    const size_t cols = sheet_visible_cols(io);
+    const size_t cols = sheet_visible_cols();
     if (sheet.cursor_col < sheet.col_offset) {
         sheet.col_offset = sheet.cursor_col;
     } else if (sheet.cursor_col >= sheet.col_offset + cols) {
@@ -426,7 +454,7 @@ static const char *sheet_current_cell_text(void)
     return sheet.cells[sheet.cursor_col];
 }
 
-static void sheet_render_footer(solar_os_shell_io_t *io)
+static void sheet_render_footer(void)
 {
     char footer[SHEET_LINE_MAX];
     if (sheet.input_mode == SHEET_INPUT_FORMULA) {
@@ -447,29 +475,32 @@ static void sheet_render_footer(solar_os_shell_io_t *io)
                  sheet_current_cell_text());
     }
 
-    solar_os_shell_io_set_cursor(io, solar_os_shell_io_rows(io) - 1U, 0);
-    sheet_write_inverse_line(io, footer);
+    const size_t rows = solar_os_tui_rows(&sheet.tui);
+    if (rows > 0) {
+        sheet_write_line(rows - 1U, footer, SOLAR_OS_TUI_ATTR_INVERSE);
+    }
 }
 
 static void sheet_render(solar_os_context_t *ctx)
 {
-    solar_os_shell_io_t *io = sheet_io(ctx);
-    const size_t rows = solar_os_shell_io_rows(io);
-    const size_t cols = solar_os_shell_io_cols(io);
+    (void)ctx;
 
-    solar_os_shell_io_clear(io);
+    const size_t rows = solar_os_tui_rows(&sheet.tui);
+    const size_t cols = solar_os_tui_cols(&sheet.tui);
+
+    solar_os_tui_clear(&sheet.tui);
+    solar_os_tui_set_cursor_visible(&sheet.tui, false);
     if (sheet.error_only) {
-        sheet_write_inverse_line(io, "sheet");
-        solar_os_shell_io_writeln(io, "");
+        sheet_write_line(0, "sheet", SOLAR_OS_TUI_ATTR_INVERSE);
         if (sheet.message[0] != '\0') {
-            solar_os_shell_io_writeln(io, sheet.message);
+            sheet_write_line(2, sheet.message, SOLAR_OS_TUI_ATTR_NORMAL);
         }
-        solar_os_shell_io_writeln(io, "usage: sheet <file.csv>");
-        solar_os_shell_io_flush(io);
+        sheet_write_line(3, "usage: sheet <file.csv>", SOLAR_OS_TUI_ATTR_NORMAL);
+        solar_os_tui_refresh(&sheet.tui);
         return;
     }
 
-    sheet_clamp_view(io);
+    sheet_clamp_view();
 
     char header[SHEET_LINE_MAX];
     snprintf(header,
@@ -478,22 +509,25 @@ static void sheet_render(solar_os_context_t *ctx)
              sheet.display_name,
              (unsigned)sheet.row_count,
              (unsigned)sheet.col_count);
-    sheet_write_inverse_line(io, header);
+    sheet_write_line(0, header, SOLAR_OS_TUI_ATTR_INVERSE);
 
     if (rows < 3U || cols == 0) {
-        solar_os_shell_io_flush(io);
+        solar_os_tui_refresh(&sheet.tui);
         return;
     }
 
-    solar_os_shell_io_set_cursor(io, 1, 0);
-    sheet_write_padded(io, "#", SHEET_ROWNUM_WIDTH, false, true);
-    const size_t visible_cols = sheet_visible_cols(io);
+    sheet_write_cell(1, 0, SHEET_ROWNUM_WIDTH, "#", SOLAR_OS_TUI_ATTR_BOLD);
+    const size_t visible_cols = sheet_visible_cols();
     for (size_t c = 0; c < visible_cols && sheet.col_offset + c < sheet.col_count; c++) {
         const size_t col = sheet.col_offset + c;
-        sheet_write_padded(io, sheet.headers[col], SHEET_CELL_WIDTH, false, true);
+        sheet_write_cell(1,
+                         SHEET_ROWNUM_WIDTH + (c * SHEET_CELL_WIDTH),
+                         SHEET_CELL_WIDTH,
+                         sheet.headers[col],
+                         SOLAR_OS_TUI_ATTR_BOLD);
     }
 
-    const size_t body_rows = sheet_body_rows(io);
+    const size_t body_rows = sheet_body_rows();
     for (size_t r = 0; r < body_rows; r++) {
         const size_t row = sheet.row_offset + r;
         if (row >= sheet.row_count) {
@@ -506,24 +540,27 @@ static void sheet_render(solar_os_context_t *ctx)
             cell_count = 0;
         }
 
-        solar_os_shell_io_set_cursor(io, 2U + r, 0);
         char row_number[SHEET_ROWNUM_WIDTH + 1U];
         snprintf(row_number, sizeof(row_number), "%u", (unsigned)(row + 1U));
-        sheet_write_padded(io, row_number, SHEET_ROWNUM_WIDTH, row == sheet.cursor_row, false);
+        sheet_write_cell(2U + r,
+                         0,
+                         SHEET_ROWNUM_WIDTH,
+                         row_number,
+                         row == sheet.cursor_row ? SOLAR_OS_TUI_ATTR_INVERSE : SOLAR_OS_TUI_ATTR_NORMAL);
 
         for (size_t c = 0; c < visible_cols && sheet.col_offset + c < sheet.col_count; c++) {
             const size_t col = sheet.col_offset + c;
             const bool active = row == sheet.cursor_row && col == sheet.cursor_col;
-            sheet_write_padded(io,
-                               col < cell_count ? sheet.cells[col] : "",
-                               SHEET_CELL_WIDTH,
-                               active,
-                               false);
+            sheet_write_cell(2U + r,
+                             SHEET_ROWNUM_WIDTH + (c * SHEET_CELL_WIDTH),
+                             SHEET_CELL_WIDTH,
+                             col < cell_count ? sheet.cells[col] : "",
+                             active ? SOLAR_OS_TUI_ATTR_INVERSE : SOLAR_OS_TUI_ATTR_NORMAL);
         }
     }
 
-    sheet_render_footer(io);
-    solar_os_shell_io_flush(io);
+    sheet_render_footer();
+    solar_os_tui_refresh(&sheet.tui);
 }
 
 static char *sheet_trim(char *text)
@@ -844,7 +881,9 @@ static bool sheet_handle_formula_input(solar_os_context_t *ctx, uint8_t ch)
 
 static void sheet_page_down(solar_os_context_t *ctx)
 {
-    const size_t step = sheet_body_rows(sheet_io(ctx));
+    (void)ctx;
+
+    const size_t step = sheet_body_rows();
     if (sheet.row_count == 0) {
         return;
     }
@@ -855,7 +894,9 @@ static void sheet_page_down(solar_os_context_t *ctx)
 
 static void sheet_page_up(solar_os_context_t *ctx)
 {
-    const size_t step = sheet_body_rows(sheet_io(ctx));
+    (void)ctx;
+
+    const size_t step = sheet_body_rows();
     sheet.cursor_row = sheet.cursor_row > step ? sheet.cursor_row - step : 0;
 }
 
@@ -865,6 +906,14 @@ static esp_err_t sheet_start(solar_os_context_t *ctx)
     if (sheet_state == NULL) {
         return ESP_ERR_NO_MEM;
     }
+
+    esp_err_t err = solar_os_tui_begin(&sheet.tui, ctx);
+    if (err != ESP_OK) {
+        heap_caps_free(sheet_state);
+        sheet_state = NULL;
+        return err;
+    }
+    (void)solar_os_tui_enable_diff(&sheet.tui, true);
 
     const int argc = solar_os_context_argc(ctx);
     if (argc != 2) {
@@ -877,7 +926,7 @@ static esp_err_t sheet_start(solar_os_context_t *ctx)
     const char *arg = solar_os_context_argv(ctx, 1);
     strlcpy(sheet.display_name, arg != NULL ? arg : "", sizeof(sheet.display_name));
 
-    esp_err_t err = solar_os_storage_resolve_path(arg, sheet.path, sizeof(sheet.path));
+    err = solar_os_storage_resolve_path(arg, sheet.path, sizeof(sheet.path));
     if (err != ESP_OK) {
         sheet.error_only = true;
         sheet_set_message(err == ESP_ERR_INVALID_SIZE ? "path too long" : "invalid path");
@@ -900,6 +949,12 @@ static esp_err_t sheet_start(solar_os_context_t *ctx)
 static void sheet_stop(solar_os_context_t *ctx)
 {
     (void)ctx;
+
+    if (sheet_state != NULL) {
+        solar_os_tui_set_cursor_visible(&sheet.tui, true);
+        solar_os_tui_refresh(&sheet.tui);
+        solar_os_tui_end(&sheet.tui);
+    }
     sheet_free_offsets();
     heap_caps_free(sheet_state);
     sheet_state = NULL;
