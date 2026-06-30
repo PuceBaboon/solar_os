@@ -229,6 +229,7 @@ Display, input, and identity:
 Storage and files:
 
 - `sd [status|lsblk|mount|unmount]`: inspect SD partitions; mount extra FAT partitions with `sd mount sd0p2 /mnt/sd0p2`.
+- `ramfs [status|mount|unmount]`: create volatile PSRAM-backed mounts that reserve their size immediately, for example `ramfs mount /tmp 1m` or `ramfs mount / 4m`.
 - `df`
 - `cd`
 - `ls`

@@ -15,7 +15,7 @@
 #include "solar_os_config.h"
 #include "solar_os_log.h"
 
-#if SOLAR_OS_PACKAGE_MEDIA || SOLAR_OS_PACKAGE_NET
+#if SOLAR_OS_PACKAGE_APP_READER || SOLAR_OS_PACKAGE_APP_WEB
 #include "solar_os_stb_image.h"
 #include "solar_os_webp_decoder.h"
 #endif
@@ -186,7 +186,7 @@ static esp_err_t doc_decode_image_asset(solar_os_doc_t *doc,
         return image->status;
     }
 
-#if SOLAR_OS_PACKAGE_MEDIA || SOLAR_OS_PACKAGE_NET
+#if SOLAR_OS_PACKAGE_APP_READER || SOLAR_OS_PACKAGE_APP_WEB
     uint8_t *gray = NULL;
     uint32_t width = 0;
     uint32_t height = 0;

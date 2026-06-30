@@ -40,6 +40,7 @@ void solar_os_shell_cmd_pkg(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_port(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_power(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_pwm(solar_os_context_t *ctx, int argc, char **argv);
+void solar_os_shell_cmd_ramfs(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_sd(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_setterm(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_sleep(solar_os_context_t *ctx, int argc, char **argv);

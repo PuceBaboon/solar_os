@@ -167,6 +167,9 @@ same job again stops the previous instance and starts it with the new arguments.
 | `sd` | `sd lsblk` | List detected SD block devices and partitions. |
 | `sd` | `sd mount [sd0pN] [mount]` | Mount the default volume or an explicit partition. |
 | `sd` | `sd unmount [sd0pN|mount]` | Unmount the default volume or an explicit partition/mount point. |
+| `ramfs` | `ramfs [status]` | List PSRAM-backed volatile filesystem mounts. |
+| `ramfs` | `ramfs mount /path size` | Mount a volatile filesystem that reserves PSRAM, such as `ramfs mount / 1m`. |
+| `ramfs` | `ramfs unmount /path` | Unmount a ramfs mount. |
 | `df` | `df` | Show free space on mounted storage volumes. |
 | `cd` | `cd [path]` | Change current shell directory. |
 | `ls` | `ls [-a] [-h] [path|pattern]` | List files. Hidden files are shown only with `-a`; sizes are human-readable with `-h`. |
@@ -185,6 +188,9 @@ ls -ah /.ssh
 cp *.txt /backup
 rm -rf /tmp/old
 sd mount sd0p2 /mnt
+ramfs mount /tmp 1m
+ramfs mount / 4m
+ramfs unmount /tmp
 zip /books/archive.zip /books/*.txt
 unzip -l /books/archive.zip
 ```

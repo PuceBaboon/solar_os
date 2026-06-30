@@ -88,6 +88,7 @@ static solar_os_ssh_transport_config_t scp_transport_config(solar_os_scp_session
         .log_handshake_complete = true,
         .log_host_key_match = true,
         .log_key_paths = true,
+        .allow_unverified_host_key_without_storage = true,
     };
 }
 

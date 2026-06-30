@@ -1,5 +1,7 @@
 #include "solar_os_shell_commands.h"
 
+#include <ctype.h>
+#include <errno.h>
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -19,6 +21,7 @@
 #include "solar_os_config.h"
 #include "solar_os_i2c.h"
 #include "solar_os_power.h"
+#include "solar_os_ramfs.h"
 #include "solar_os_shell_common.h"
 #include "solar_os_shell_io.h"
 #include "solar_os_storage.h"
@@ -768,6 +771,157 @@ void solar_os_shell_cmd_mem(solar_os_context_t *ctx, int argc, char **argv)
     mem_print_region(term, "DMA", MALLOC_CAP_DMA);
 }
 
+static bool ramfs_parse_size(const char *text, size_t *bytes)
+{
+    if (text == NULL || text[0] == '\0' || bytes == NULL) {
+        return false;
+    }
+
+    char *end = NULL;
+    errno = 0;
+    unsigned long long value = strtoull(text, &end, 0);
+    if (errno != 0 || end == text || value == 0) {
+        return false;
+    }
+
+    uint64_t scale = 1;
+    char suffix[4] = {0};
+    size_t suffix_len = 0;
+    while (*end != '\0' && suffix_len + 1 < sizeof(suffix)) {
+        suffix[suffix_len++] = (char)tolower((unsigned char)*end++);
+    }
+    if (*end != '\0') {
+        return false;
+    }
+
+    if (suffix[0] == '\0' || strcmp(suffix, "b") == 0) {
+        scale = 1;
+    } else if (strcmp(suffix, "k") == 0 ||
+               strcmp(suffix, "kb") == 0 ||
+               strcmp(suffix, "ki") == 0 ||
+               strcmp(suffix, "kib") == 0) {
+        scale = 1024ULL;
+    } else if (strcmp(suffix, "m") == 0 ||
+               strcmp(suffix, "mb") == 0 ||
+               strcmp(suffix, "mi") == 0 ||
+               strcmp(suffix, "mib") == 0) {
+        scale = 1024ULL * 1024ULL;
+    } else if (strcmp(suffix, "g") == 0 ||
+               strcmp(suffix, "gb") == 0 ||
+               strcmp(suffix, "gi") == 0 ||
+               strcmp(suffix, "gib") == 0) {
+        scale = 1024ULL * 1024ULL * 1024ULL;
+    } else {
+        return false;
+    }
+
+    if (value > UINT64_MAX / scale || value * scale > SIZE_MAX) {
+        return false;
+    }
+    *bytes = (size_t)(value * scale);
+    return true;
+}
+
+static void ramfs_print_usage(solar_os_shell_io_t *term)
+{
+    solar_os_shell_io_writeln(term, "usage:");
+    solar_os_shell_io_writeln(term, "  ramfs [status]");
+    solar_os_shell_io_writeln(term, "  ramfs mount /path size");
+    solar_os_shell_io_writeln(term, "  ramfs unmount /path");
+}
+
+static void ramfs_print_status(solar_os_shell_io_t *term)
+{
+    const size_t count = solar_os_ramfs_mount_count();
+    if (count == 0) {
+        solar_os_shell_io_writeln(term, "ramfs: no mounts");
+        return;
+    }
+
+    solar_os_shell_io_writeln(term, "PATH       TOTAL    USED     FREE     FILES DIRS OPEN");
+    for (size_t i = 0; i < count; i++) {
+        solar_os_ramfs_info_t info;
+        char total[12];
+        char used[12];
+        char free_space[12];
+
+        if (!solar_os_ramfs_get_info(i, &info)) {
+            continue;
+        }
+        format_bytes(info.total_bytes, total, sizeof(total));
+        format_bytes(info.used_bytes, used, sizeof(used));
+        format_bytes(info.free_bytes, free_space, sizeof(free_space));
+        solar_os_shell_io_printf(term,
+                                 "%-10s %-8s %-8s %-8s %5u %4u %4u\n",
+                                 info.mount_point,
+                                 total,
+                                 used,
+                                 free_space,
+                                 (unsigned)info.file_count,
+                                 (unsigned)info.dir_count,
+                                 (unsigned)info.open_count);
+    }
+}
+
+void solar_os_shell_cmd_ramfs(solar_os_context_t *ctx, int argc, char **argv)
+{
+    solar_os_shell_io_t *term = terminal(ctx);
+
+    if (argc == 1 || strcmp(argv[1], "status") == 0) {
+        if (argc > 2) {
+            solar_os_shell_io_writeln(term, "usage: ramfs [status]");
+            return;
+        }
+        ramfs_print_status(term);
+        return;
+    }
+
+    if (strcmp(argv[1], "mount") == 0) {
+        size_t quota = 0;
+        if (argc != 4 || !ramfs_parse_size(argv[3], &quota)) {
+            solar_os_shell_io_writeln(term, "usage: ramfs mount /path size");
+            return;
+        }
+
+        const esp_err_t err = solar_os_ramfs_mount(argv[2], quota);
+        if (err == ESP_OK) {
+            ramfs_print_status(term);
+        } else if (err == ESP_ERR_NOT_SUPPORTED) {
+            solar_os_shell_io_writeln(term, "ramfs: PSRAM not available on this board");
+        } else if (err == ESP_ERR_INVALID_STATE) {
+            solar_os_shell_io_printf(term, "ramfs: mount point already in use: %s\n", argv[2]);
+        } else if (err == ESP_ERR_INVALID_SIZE) {
+            solar_os_shell_io_writeln(term, "ramfs: invalid size or mount path too long");
+        } else {
+            solar_os_shell_io_printf(term, "ramfs mount failed: %s\n", esp_err_to_name(err));
+        }
+        return;
+    }
+
+    if (strcmp(argv[1], "unmount") == 0) {
+        if (argc != 3) {
+            solar_os_shell_io_writeln(term, "usage: ramfs unmount /path");
+            return;
+        }
+
+        const esp_err_t err = solar_os_ramfs_unmount(argv[2]);
+        if (err == ESP_OK) {
+            ramfs_print_status(term);
+        } else if (err == ESP_ERR_NOT_SUPPORTED) {
+            solar_os_shell_io_writeln(term, "ramfs: PSRAM not available on this board");
+        } else if (err == ESP_ERR_NOT_FOUND) {
+            solar_os_shell_io_printf(term, "ramfs: not mounted: %s\n", argv[2]);
+        } else if (err == ESP_ERR_INVALID_STATE) {
+            solar_os_shell_io_printf(term, "ramfs: mount is busy: %s\n", argv[2]);
+        } else {
+            solar_os_shell_io_printf(term, "ramfs unmount failed: %s\n", esp_err_to_name(err));
+        }
+        return;
+    }
+
+    ramfs_print_usage(term);
+}
+
 void solar_os_shell_cmd_df(solar_os_context_t *ctx, int argc, char **argv)
 {
     solar_os_shell_io_t *term = terminal(ctx);
@@ -779,51 +933,77 @@ void solar_os_shell_cmd_df(solar_os_context_t *ctx, int argc, char **argv)
         return;
     }
 
-    const esp_err_t scan_err = solar_os_storage_rescan();
-    if (scan_err != ESP_OK) {
-        if (solar_os_shell_print_not_supported(term, "df", "SD storage", scan_err)) {
-            return;
-        }
-        solar_os_shell_io_printf(term, "df: SD card not available: %s\n", esp_err_to_name(scan_err));
-        return;
-    }
-
     bool any = false;
     solar_os_shell_io_writeln(term, "Filesystem  Total    Used     Free     Use% Mount");
-    const size_t count = solar_os_storage_block_count();
-    for (size_t i = 0; i < count; i++) {
-        solar_os_storage_block_t block;
-        solar_os_storage_usage_t usage;
+
+    const esp_err_t scan_err = solar_os_storage_rescan();
+    if (scan_err == ESP_OK) {
+        const size_t count = solar_os_storage_block_count();
+        for (size_t i = 0; i < count; i++) {
+            solar_os_storage_block_t block;
+            solar_os_storage_usage_t usage;
+            char total[12];
+            char used[12];
+            char free_space[12];
+
+            if (!solar_os_storage_get_block(i, &block) || !block.mounted) {
+                continue;
+            }
+
+            const esp_err_t err = solar_os_storage_get_usage_for_block(&block, &usage);
+            if (err != ESP_OK) {
+                solar_os_shell_io_printf(term, "%-10s read failed: %s\n", block.name, esp_err_to_name(err));
+                any = true;
+                continue;
+            }
+
+            format_bytes(usage.total_bytes, total, sizeof(total));
+            format_bytes(usage.used_bytes, used, sizeof(used));
+            format_bytes(usage.free_bytes, free_space, sizeof(free_space));
+            const uint32_t used_percent = usage.total_bytes > 0 ?
+                (uint32_t)((usage.used_bytes * 100ULL) / usage.total_bytes) :
+                0U;
+
+            solar_os_shell_io_printf(term,
+                                     "%-10s %-8s %-8s %-8s %3u%% %s\n",
+                                     block.name,
+                                     total,
+                                     used,
+                                     free_space,
+                                     (unsigned)used_percent,
+                                     block.mount_point);
+            any = true;
+        }
+    } else if (scan_err != ESP_ERR_NOT_SUPPORTED) {
+        solar_os_shell_io_printf(term, "sd         read failed: %s\n", esp_err_to_name(scan_err));
+        any = true;
+    }
+
+    const size_t ramfs_count = solar_os_ramfs_mount_count();
+    for (size_t i = 0; i < ramfs_count; i++) {
+        solar_os_ramfs_info_t info;
         char total[12];
         char used[12];
         char free_space[12];
 
-        if (!solar_os_storage_get_block(i, &block) || !block.mounted) {
+        if (!solar_os_ramfs_get_info(i, &info)) {
             continue;
         }
-
-        const esp_err_t err = solar_os_storage_get_usage_for_block(&block, &usage);
-        if (err != ESP_OK) {
-            solar_os_shell_io_printf(term, "%-10s read failed: %s\n", block.name, esp_err_to_name(err));
-            any = true;
-            continue;
-        }
-
-        format_bytes(usage.total_bytes, total, sizeof(total));
-        format_bytes(usage.used_bytes, used, sizeof(used));
-        format_bytes(usage.free_bytes, free_space, sizeof(free_space));
-        const uint32_t used_percent = usage.total_bytes > 0 ?
-            (uint32_t)((usage.used_bytes * 100ULL) / usage.total_bytes) :
+        format_bytes(info.total_bytes, total, sizeof(total));
+        format_bytes(info.used_bytes, used, sizeof(used));
+        format_bytes(info.free_bytes, free_space, sizeof(free_space));
+        const uint32_t used_percent = info.total_bytes > 0 ?
+            (uint32_t)((info.used_bytes * 100ULL) / info.total_bytes) :
             0U;
 
         solar_os_shell_io_printf(term,
                                  "%-10s %-8s %-8s %-8s %3u%% %s\n",
-                                 block.name,
+                                 "ramfs",
                                  total,
                                  used,
                                  free_space,
                                  (unsigned)used_percent,
-                                 block.mount_point);
+                                 info.mount_point);
         any = true;
     }
 

@@ -25,6 +25,7 @@
 #include "solar_os_log.h"
 #include "solar_os_port.h"
 #include "solar_os_port_shell.h"
+#include "solar_os_ramfs.h"
 #include "solar_os_sessions.h"
 #include "solar_os_storage.h"
 #include "solar_os_stream.h"
@@ -65,6 +66,7 @@ typedef struct {
     bool complete_commands;
     bool complete_jobs;
     bool complete_ports;
+    bool complete_ramfs_mounts;
     bool complete_streams;
     bool scalar_streams_only;
     bool complete_path;
@@ -140,12 +142,13 @@ static const shell_command_t shell_builtin_commands[] = {
     {"status", "show system status", solar_os_shell_cmd_status},
     {"uptime", "show time since boot", solar_os_shell_cmd_uptime},
     {"mem", "show free memory", solar_os_shell_cmd_mem},
+    {"ramfs", "PSRAM-backed volatile filesystem", solar_os_shell_cmd_ramfs},
     {"stream", "list data streams", solar_os_shell_cmd_stream},
     {"daq", "capture data streams", solar_os_shell_cmd_daq},
     {"log", "show SolarOS logs", solar_os_shell_cmd_log},
     {"port", "show byte-stream ports", solar_os_shell_cmd_port},
     {"xfer", "transfer files over byte-stream ports", solar_os_shell_cmd_xfer},
-    {"df", "show SD card free space", solar_os_shell_cmd_df},
+    {"df", "show filesystem free space", solar_os_shell_cmd_df},
     {"sd", "SD card control", solar_os_shell_cmd_sd},
     {"top", "show task resource usage", solar_os_shell_cmd_top},
     {"battery", "battery status and config", solar_os_shell_cmd_battery},
@@ -293,6 +296,14 @@ static const char * const sd_subcommands[] = {
     "mount",
     "unmount",
 };
+
+static const char * const ramfs_subcommands[] = {
+    "status",
+    "mount",
+    "unmount",
+};
+
+static const char * const ramfs_size_values[] = {"64k", "256k", "1m", "4m"};
 
 static const char * const i2c_subcommands[] = {
     "status",
@@ -557,6 +568,9 @@ static const char * const path_mqtt_subscribe_topic[] = {
 };
 #endif
 static const char * const path_sd[] = {"sd"};
+static const char * const path_ramfs[] = {"ramfs"};
+static const char * const path_ramfs_mount_path[] = {"ramfs", "mount", SHELL_COMPLETION_ANY};
+static const char * const path_ramfs_unmount[] = {"ramfs", "unmount"};
 static const char * const path_i2c[] = {"i2c"};
 static const char * const path_uart[] = {"uart"};
 static const char * const path_uart_mode[] = {"uart", "mode"};
@@ -663,6 +677,12 @@ static const char * const path_ota_flavor[] = {"ota", "flavor"};
         .path_count = SHELL_ARRAY_COUNT(path_array), \
         .complete_ports = true, \
     }
+#define SHELL_COMPLETION_RAMFS_MOUNTS(path_array) \
+    { \
+        .path = path_array, \
+        .path_count = SHELL_ARRAY_COUNT(path_array), \
+        .complete_ramfs_mounts = true, \
+    }
 #define SHELL_COMPLETION_STREAMS(path_array) \
     { \
         .path = path_array, \
@@ -767,6 +787,9 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_STATIC(path_mqtt_subscribe_topic, mqtt_qos_values),
 #endif
     SHELL_COMPLETION_STATIC(path_sd, sd_subcommands),
+    SHELL_COMPLETION_STATIC(path_ramfs, ramfs_subcommands),
+    SHELL_COMPLETION_STATIC(path_ramfs_mount_path, ramfs_size_values),
+    SHELL_COMPLETION_RAMFS_MOUNTS(path_ramfs_unmount),
     SHELL_COMPLETION_STATIC(path_i2c, i2c_subcommands),
     SHELL_COMPLETION_STATIC(path_uart, uart_subcommands),
     SHELL_COMPLETION_STATIC(path_uart_mode, uart_mode_values),
@@ -876,7 +899,9 @@ static bool shell_is_printable_char(char ch)
 static void shell_reset_cwd(solar_os_shell_session_t *session)
 {
     if (session != NULL) {
-        strlcpy(session->cwd, solar_os_storage_mount_point(), sizeof(session->cwd));
+        strlcpy(session->cwd,
+                solar_os_storage_path_has_mount_prefix("/") ? "/" : solar_os_storage_mount_point(),
+                sizeof(session->cwd));
     }
 }
 
@@ -969,13 +994,13 @@ static void shell_format_display_path(const char *path, char *display, size_t di
     }
 
     if (*relative == '\0') {
-        if (strcmp(root, solar_os_storage_mount_point()) == 0) {
+        if (strcmp(root, "/") == 0 || strcmp(root, solar_os_storage_mount_point()) == 0) {
             strlcpy(display, "/", display_len);
         } else {
             snprintf(display, display_len, "%s/", root);
         }
     } else {
-        if (strcmp(root, solar_os_storage_mount_point()) == 0) {
+        if (strcmp(root, "/") == 0 || strcmp(root, solar_os_storage_mount_point()) == 0) {
             snprintf(display, display_len, "/%s/", relative);
         } else {
             snprintf(display, display_len, "%s/%s/", root, relative);
@@ -2569,6 +2594,18 @@ static void shell_completion_emit_ports(shell_completion_match_t *state)
     }
 }
 
+static void shell_completion_emit_ramfs_mounts(shell_completion_match_t *state)
+{
+    const size_t count = solar_os_ramfs_mount_count();
+
+    for (size_t i = 0; i < count; i++) {
+        solar_os_ramfs_info_t info;
+        if (solar_os_ramfs_get_info(i, &info)) {
+            shell_completion_emit(state, info.mount_point);
+        }
+    }
+}
+
 static void shell_completion_emit_streams(shell_completion_match_t *state, bool scalar_only)
 {
     const size_t count = solar_os_stream_count();
@@ -2959,6 +2996,9 @@ static bool shell_completion_collect_matches(solar_os_context_t *ctx,
         }
         if (rule->complete_ports) {
             shell_completion_emit_ports(state);
+        }
+        if (rule->complete_ramfs_mounts) {
+            shell_completion_emit_ramfs_mounts(state);
         }
         if (rule->complete_streams) {
             shell_completion_emit_streams(state, rule->scalar_streams_only);

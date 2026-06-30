@@ -47,6 +47,17 @@ typedef struct {
     char mount_point[SOLAR_OS_STORAGE_MOUNT_POINT_MAX];
 } solar_os_storage_block_t;
 
+typedef enum {
+    SOLAR_OS_STORAGE_MOUNT_SD,
+    SOLAR_OS_STORAGE_MOUNT_RAMFS,
+} solar_os_storage_mount_type_t;
+
+typedef struct {
+    char mount_point[SOLAR_OS_STORAGE_MOUNT_POINT_MAX];
+    char name[SOLAR_OS_STORAGE_BLOCK_NAME_MAX];
+    solar_os_storage_mount_type_t type;
+} solar_os_storage_mount_info_t;
+
 esp_err_t solar_os_storage_init(void);
 esp_err_t solar_os_storage_mount(void);
 esp_err_t solar_os_storage_mount_volume(const char *name, const char *mount_point);
@@ -62,6 +73,9 @@ esp_err_t solar_os_storage_get_usage_for_block(const solar_os_storage_block_t *b
 esp_err_t solar_os_storage_rescan(void);
 size_t solar_os_storage_block_count(void);
 bool solar_os_storage_get_block(size_t index, solar_os_storage_block_t *block);
+size_t solar_os_storage_mount_count(void);
+bool solar_os_storage_get_mount(size_t index, solar_os_storage_mount_info_t *mount);
+bool solar_os_storage_root_is_mounted(void);
 bool solar_os_storage_path_has_mount_prefix(const char *path);
 esp_err_t solar_os_storage_path_mount_point(const char *path,
                                             char *mount_point,
