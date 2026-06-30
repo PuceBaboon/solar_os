@@ -29,6 +29,7 @@
 #include "solar_os_sessions.h"
 #include "solar_os_storage.h"
 #include "solar_os_stream.h"
+#include "solar_os_spi.h"
 #include "solar_os_terminal.h"
 
 #define SHELL_INPUT_MAX 192
@@ -67,6 +68,7 @@ typedef struct {
     bool complete_jobs;
     bool complete_ports;
     bool complete_ramfs_mounts;
+    bool complete_spi_cs;
     bool complete_streams;
     bool scalar_streams_only;
     bool complete_path;
@@ -184,6 +186,9 @@ static const shell_command_t shell_builtin_commands[] = {
 #endif
 #if SOLAR_OS_PACKAGE_SERVICE_I2C
     {"i2c", "I2C bus tools", solar_os_shell_cmd_i2c},
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_SPI
+    {"spi", "SPI bus tools", solar_os_shell_cmd_spi},
 #endif
 #if SOLAR_OS_PACKAGE_SERVICE_GPIO
     {"gpio", "expansion GPIO tools", solar_os_shell_cmd_gpio},
@@ -343,6 +348,17 @@ static const char * const i2c_subcommands[] = {
     "read",
     "write",
 };
+
+static const char * const spi_subcommands[] = {
+    "status",
+    "xfer",
+    "read",
+    "write",
+};
+
+static const char * const spi_mode_values[] = {"0", "1", "2", "3"};
+static const char * const spi_speed_values[] = {"100k", "1m", "4m", "10m", "20m"};
+static const char * const spi_fill_values[] = {"0xff", "0x00"};
 
 static const char * const uart_subcommands[] = {
     "status",
@@ -621,6 +637,39 @@ static const char * const path_ramfs[] = {"ramfs"};
 static const char * const path_ramfs_mount_path[] = {"ramfs", "mount", SHELL_COMPLETION_ANY};
 static const char * const path_ramfs_unmount[] = {"ramfs", "unmount"};
 static const char * const path_i2c[] = {"i2c"};
+static const char * const path_spi[] = {"spi"};
+static const char * const path_spi_xfer[] = {"spi", "xfer"};
+static const char * const path_spi_xfer_cs[] = {"spi", "xfer", SHELL_COMPLETION_ANY};
+static const char * const path_spi_xfer_mode[] = {
+    "spi",
+    "xfer",
+    SHELL_COMPLETION_ANY,
+    SHELL_COMPLETION_ANY,
+};
+static const char * const path_spi_read[] = {"spi", "read"};
+static const char * const path_spi_read_cs[] = {"spi", "read", SHELL_COMPLETION_ANY};
+static const char * const path_spi_read_mode[] = {
+    "spi",
+    "read",
+    SHELL_COMPLETION_ANY,
+    SHELL_COMPLETION_ANY,
+};
+static const char * const path_spi_read_len[] = {
+    "spi",
+    "read",
+    SHELL_COMPLETION_ANY,
+    SHELL_COMPLETION_ANY,
+    SHELL_COMPLETION_ANY,
+    SHELL_COMPLETION_ANY,
+};
+static const char * const path_spi_write[] = {"spi", "write"};
+static const char * const path_spi_write_cs[] = {"spi", "write", SHELL_COMPLETION_ANY};
+static const char * const path_spi_write_mode[] = {
+    "spi",
+    "write",
+    SHELL_COMPLETION_ANY,
+    SHELL_COMPLETION_ANY,
+};
 static const char * const path_uart[] = {"uart"};
 static const char * const path_uart_mode[] = {"uart", "mode"};
 static const char * const path_port[] = {"port"};
@@ -736,6 +785,12 @@ static const char * const path_ota_flavor[] = {"ota", "flavor"};
         .path_count = SHELL_ARRAY_COUNT(path_array), \
         .complete_ramfs_mounts = true, \
     }
+#define SHELL_COMPLETION_SPI_CS(path_array) \
+    { \
+        .path = path_array, \
+        .path_count = SHELL_ARRAY_COUNT(path_array), \
+        .complete_spi_cs = true, \
+    }
 #define SHELL_COMPLETION_STREAMS(path_array) \
     { \
         .path = path_array, \
@@ -844,6 +899,17 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_STATIC(path_ramfs_mount_path, ramfs_size_values),
     SHELL_COMPLETION_RAMFS_MOUNTS(path_ramfs_unmount),
     SHELL_COMPLETION_STATIC(path_i2c, i2c_subcommands),
+    SHELL_COMPLETION_STATIC(path_spi, spi_subcommands),
+    SHELL_COMPLETION_SPI_CS(path_spi_xfer),
+    SHELL_COMPLETION_STATIC(path_spi_xfer_cs, spi_mode_values),
+    SHELL_COMPLETION_STATIC(path_spi_xfer_mode, spi_speed_values),
+    SHELL_COMPLETION_SPI_CS(path_spi_read),
+    SHELL_COMPLETION_STATIC(path_spi_read_cs, spi_mode_values),
+    SHELL_COMPLETION_STATIC(path_spi_read_mode, spi_speed_values),
+    SHELL_COMPLETION_STATIC(path_spi_read_len, spi_fill_values),
+    SHELL_COMPLETION_SPI_CS(path_spi_write),
+    SHELL_COMPLETION_STATIC(path_spi_write_cs, spi_mode_values),
+    SHELL_COMPLETION_STATIC(path_spi_write_mode, spi_speed_values),
     SHELL_COMPLETION_STATIC(path_uart, uart_subcommands),
     SHELL_COMPLETION_STATIC(path_uart_mode, uart_mode_values),
     SHELL_COMPLETION_STATIC(path_port, port_subcommands),
@@ -897,6 +963,7 @@ static const shell_completion_rule_t shell_completion_rules[] = {
 #undef SHELL_COMPLETION_PATH
 #undef SHELL_COMPLETION_PORTS
 #undef SHELL_COMPLETION_STREAMS
+#undef SHELL_COMPLETION_SPI_CS
 #undef SHELL_COMPLETION_JOBS
 #undef SHELL_COMPLETION_COMMANDS
 #undef SHELL_COMPLETION_OPTIONS
@@ -2663,6 +2730,25 @@ static void shell_completion_emit_ramfs_mounts(shell_completion_match_t *state)
     }
 }
 
+static void shell_completion_emit_spi_cs(shell_completion_match_t *state)
+{
+#if SOLAR_OS_PACKAGE_SERVICE_SPI
+    solar_os_spi_status_t status;
+    if (solar_os_spi_get_status(&status) != ESP_OK || !status.available) {
+        return;
+    }
+
+    for (size_t i = 0; i < status.cs_count; i++) {
+        char pin[8];
+        shell_completion_emit(state, status.cs[i].name);
+        snprintf(pin, sizeof(pin), "%d", status.cs[i].pin);
+        shell_completion_emit(state, pin);
+    }
+#else
+    (void)state;
+#endif
+}
+
 static void shell_completion_emit_streams(shell_completion_match_t *state, bool scalar_only)
 {
     const size_t count = solar_os_stream_count();
@@ -3056,6 +3142,9 @@ static bool shell_completion_collect_matches(solar_os_context_t *ctx,
         }
         if (rule->complete_ramfs_mounts) {
             shell_completion_emit_ramfs_mounts(state);
+        }
+        if (rule->complete_spi_cs) {
+            shell_completion_emit_spi_cs(state);
         }
         if (rule->complete_streams) {
             shell_completion_emit_streams(state, rule->scalar_streams_only);

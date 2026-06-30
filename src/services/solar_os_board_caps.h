@@ -30,6 +30,7 @@ typedef enum {
     SOLAR_OS_BOARD_CAP_BUTTONS = 1U << 18,
     SOLAR_OS_BOARD_CAP_JOYSTICK = 1U << 19,
     SOLAR_OS_BOARD_CAP_ADC_DPAD = 1U << 20,
+    SOLAR_OS_BOARD_CAP_SPI = 1U << 21,
 } solar_os_board_capability_t;
 
 #ifndef SOLAR_OS_BOARD_CAPABILITIES
@@ -58,6 +59,9 @@ typedef enum {
 #endif
 #ifndef SOLAR_OS_BOARD_HAS_I2C
 #define SOLAR_OS_BOARD_HAS_I2C 0
+#endif
+#ifndef SOLAR_OS_BOARD_HAS_SPI
+#define SOLAR_OS_BOARD_HAS_SPI 0
 #endif
 #ifndef SOLAR_OS_BOARD_HAS_RTC
 #define SOLAR_OS_BOARD_HAS_RTC 0

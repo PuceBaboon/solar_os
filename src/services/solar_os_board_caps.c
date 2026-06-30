@@ -16,6 +16,7 @@ static const board_capability_name_t capability_names[] = {
     {SOLAR_OS_BOARD_CAP_UART, "uart"},
     {SOLAR_OS_BOARD_CAP_SD, "sd"},
     {SOLAR_OS_BOARD_CAP_I2C, "i2c"},
+    {SOLAR_OS_BOARD_CAP_SPI, "spi"},
     {SOLAR_OS_BOARD_CAP_RTC, "rtc"},
     {SOLAR_OS_BOARD_CAP_BATTERY, "battery"},
     {SOLAR_OS_BOARD_CAP_AUDIO, "audio"},
@@ -41,6 +42,7 @@ solar_os_board_capabilities_t solar_os_board_capabilities(void)
         (SOLAR_OS_BOARD_HAS_UART ? SOLAR_OS_BOARD_CAP_UART : 0U) |
         (SOLAR_OS_BOARD_HAS_SD ? SOLAR_OS_BOARD_CAP_SD : 0U) |
         (SOLAR_OS_BOARD_HAS_I2C ? SOLAR_OS_BOARD_CAP_I2C : 0U) |
+        (SOLAR_OS_BOARD_HAS_SPI ? SOLAR_OS_BOARD_CAP_SPI : 0U) |
         (SOLAR_OS_BOARD_HAS_RTC ? SOLAR_OS_BOARD_CAP_RTC : 0U) |
         (SOLAR_OS_BOARD_HAS_BATTERY ? SOLAR_OS_BOARD_CAP_BATTERY : 0U) |
         (SOLAR_OS_BOARD_HAS_AUDIO ? SOLAR_OS_BOARD_CAP_AUDIO : 0U) |

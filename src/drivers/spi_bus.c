@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "driver/gpio.h"
 #include "solar_os_board.h"
@@ -20,6 +21,26 @@ static bool spi_bus_initialized_by_us;
 spi_host_device_t solar_os_spi_bus_host(void)
 {
     return SOLAR_OS_BOARD_SPI_HOST;
+}
+
+int solar_os_spi_bus_sclk_pin(void)
+{
+    return (int)SOLAR_OS_BOARD_PIN_SPI_SCLK;
+}
+
+int solar_os_spi_bus_miso_pin(void)
+{
+    return (int)SOLAR_OS_BOARD_PIN_SPI_MISO;
+}
+
+int solar_os_spi_bus_mosi_pin(void)
+{
+    return (int)SOLAR_OS_BOARD_PIN_SPI_MOSI;
+}
+
+size_t solar_os_spi_bus_max_transfer_size(void)
+{
+    return SOLAR_OS_BOARD_SPI_MAX_TRANSFER_SZ;
 }
 
 esp_err_t solar_os_spi_bus_acquire(void)
@@ -64,4 +85,48 @@ void solar_os_spi_bus_release(void)
         (void)spi_bus_free(SOLAR_OS_BOARD_SPI_HOST);
     }
     spi_bus_initialized_by_us = false;
+}
+
+esp_err_t solar_os_spi_bus_transfer(int cs_pin,
+                                    uint8_t mode,
+                                    uint32_t speed_hz,
+                                    const uint8_t *tx_data,
+                                    uint8_t *rx_data,
+                                    size_t len)
+{
+    if (cs_pin < 0 || mode > 3 || speed_hz == 0 || len == 0 ||
+        len > SOLAR_OS_BOARD_SPI_MAX_TRANSFER_SZ ||
+        (tx_data == NULL && rx_data == NULL)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    esp_err_t err = solar_os_spi_bus_acquire();
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    spi_device_handle_t device = NULL;
+    const spi_device_interface_config_t device_config = {
+        .clock_speed_hz = (int)speed_hz,
+        .mode = mode,
+        .spics_io_num = cs_pin,
+        .queue_size = 1,
+    };
+
+    err = spi_bus_add_device(SOLAR_OS_BOARD_SPI_HOST, &device_config, &device);
+    if (err == ESP_OK) {
+        spi_transaction_t transaction = {
+            .length = len * 8U,
+            .tx_buffer = tx_data,
+            .rx_buffer = rx_data,
+        };
+        err = spi_device_transmit(device, &transaction);
+        const esp_err_t remove_err = spi_bus_remove_device(device);
+        if (err == ESP_OK) {
+            err = remove_err;
+        }
+    }
+
+    solar_os_spi_bus_release();
+    return err;
 }

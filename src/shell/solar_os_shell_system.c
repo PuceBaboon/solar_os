@@ -24,6 +24,7 @@
 #include "solar_os_ramfs.h"
 #include "solar_os_shell_common.h"
 #include "solar_os_shell_io.h"
+#include "solar_os_spi.h"
 #include "solar_os_storage.h"
 #include "solar_os_time.h"
 #include "solar_os_uart.h"
@@ -645,6 +646,9 @@ void solar_os_shell_cmd_status(solar_os_context_t *ctx, int argc, char **argv)
 #if SOLAR_OS_PACKAGE_SERVICE_UART
     solar_os_uart_status_t uart_status;
 #endif
+#if SOLAR_OS_PACKAGE_SERVICE_SPI
+    solar_os_spi_status_t spi_status;
+#endif
     solar_os_shell_io_t *term = terminal(ctx);
 
     (void)argc;
@@ -694,6 +698,25 @@ void solar_os_shell_cmd_status(solar_os_context_t *ctx, int argc, char **argv)
                                  solar_os_i2c_get_speed_hz());
     } else {
         solar_os_shell_io_writeln(term, "I2C: not available on this board");
+    }
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_SPI
+    if (solar_os_spi_get_status(&spi_status) == ESP_OK && spi_status.available) {
+        solar_os_shell_io_printf(term,
+                                 "%s: SCK %d, MISO %d, MOSI %d, CS",
+                                 spi_status.name != NULL ? spi_status.name : "SPI",
+                                 spi_status.sclk_pin,
+                                 spi_status.miso_pin,
+                                 spi_status.mosi_pin);
+        for (size_t i = 0; i < spi_status.cs_count; i++) {
+            solar_os_shell_io_printf(term,
+                                     " %s(GPIO%d)",
+                                     spi_status.cs[i].name,
+                                     spi_status.cs[i].pin);
+        }
+        solar_os_shell_io_put_char(term, '\n');
+    } else {
+        solar_os_shell_io_writeln(term, "SPI: not available on this board");
     }
 #endif
 #if SOLAR_OS_PACKAGE_SERVICE_AUDIO

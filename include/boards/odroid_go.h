@@ -6,6 +6,7 @@
 #include "solar_os_adc_dpad.h"
 #include "solar_os_buttons.h"
 #include "solar_os_keys.h"
+#include "solar_os_spi.h"
 
 #define SOLAR_OS_BOARD_ID "odroid_go"
 #define SOLAR_OS_BOARD_NAME "Hardkernel ODROID-GO"
@@ -17,10 +18,15 @@
 #define SOLAR_OS_BOARD_PIN_UART_RX GPIO_NUM_3
 
 #define SOLAR_OS_BOARD_SPI_HOST SPI3_HOST
+#define SOLAR_OS_BOARD_SPI_NAME "VSPI"
 #define SOLAR_OS_BOARD_PIN_SPI_SCLK GPIO_NUM_18
 #define SOLAR_OS_BOARD_PIN_SPI_MISO GPIO_NUM_19
 #define SOLAR_OS_BOARD_PIN_SPI_MOSI GPIO_NUM_23
 #define SOLAR_OS_BOARD_SPI_MAX_TRANSFER_SZ 4096
+#define SOLAR_OS_BOARD_SPI_CS_SLOTS { \
+    {.pin = GPIO_NUM_15, .name = "io15"}, \
+    {.pin = GPIO_NUM_4, .name = "io4"}, \
+}
 
 #define SOLAR_OS_BOARD_PIN_TFT_DC GPIO_NUM_21
 #define SOLAR_OS_BOARD_PIN_TFT_CS GPIO_NUM_5

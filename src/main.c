@@ -52,6 +52,7 @@
 #include "solar_os_sessions.h"
 #include "solar_os_shell.h"
 #include "solar_os_splash.h"
+#include "solar_os_spi.h"
 #include "solar_os_storage.h"
 #include "solar_os_terminal_internal.h"
 #include "solar_os_time.h"
@@ -229,6 +230,23 @@ static void print_boot_summary(void)
                   (int)SOLAR_OS_BOARD_I2C_PORT,
                   SOLAR_OS_BOARD_PIN_I2C_SDA,
                   SOLAR_OS_BOARD_PIN_I2C_SCL);
+#endif
+#ifdef SOLAR_OS_BOARD_SPI_HOST
+#ifdef SOLAR_OS_BOARD_SPI_NAME
+    SOLAR_OS_LOGI(TAG,
+                  "%s pins: SCK=%d MISO=%d MOSI=%d",
+                  SOLAR_OS_BOARD_SPI_NAME,
+                  SOLAR_OS_BOARD_PIN_SPI_SCLK,
+                  SOLAR_OS_BOARD_PIN_SPI_MISO,
+                  SOLAR_OS_BOARD_PIN_SPI_MOSI);
+#else
+    SOLAR_OS_LOGI(TAG,
+                  "SPI%d pins: SCK=%d MISO=%d MOSI=%d",
+                  (int)SOLAR_OS_BOARD_SPI_HOST,
+                  SOLAR_OS_BOARD_PIN_SPI_SCLK,
+                  SOLAR_OS_BOARD_PIN_SPI_MISO,
+                  SOLAR_OS_BOARD_PIN_SPI_MOSI);
+#endif
 #endif
 #ifdef SOLAR_OS_BOARD_PIN_SDMMC_CLK
     SOLAR_OS_LOGI(TAG,
@@ -1039,6 +1057,15 @@ static void init_peripherals(void)
                 }
             }
 #endif
+        }
+    }
+#endif
+
+#if SOLAR_OS_PACKAGE_SERVICE_SPI
+    if (board_has(SOLAR_OS_BOARD_CAP_SPI)) {
+        const esp_err_t spi_err = solar_os_spi_init();
+        if (spi_err != ESP_OK) {
+            SOLAR_OS_LOGW(TAG, "SPI unavailable: %s", esp_err_to_name(spi_err));
         }
     }
 #endif

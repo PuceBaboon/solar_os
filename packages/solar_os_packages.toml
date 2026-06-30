@@ -9,6 +9,7 @@ members = [
   "service_audio",
   "service_gpio",
   "service_i2c",
+  "service_spi",
   "service_json",
   "service_crypto",
   "service_uart",
@@ -224,6 +225,12 @@ label = "service.i2c"
 sources = ["services/solar_os_i2c.c"]
 requires = ["esp_driver_i2c"]
 capabilities = ["i2c"]
+
+[packages.service_spi]
+label = "service.spi"
+sources = ["services/solar_os_spi.c"]
+requires = ["esp_driver_gpio", "esp_driver_spi"]
+capabilities = ["spi"]
 
 [packages.service_json]
 label = "service.json"

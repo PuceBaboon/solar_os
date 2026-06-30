@@ -35,6 +35,7 @@ set(SOLAR_OS_BOARD_CAPABILITY_NAMES
     UART
     SD
     I2C
+    SPI
     RTC
     BATTERY
     AUDIO
@@ -220,6 +221,7 @@ solar_os_require_board_driver("${SOLAR_OS_BOARD_HAS_DISPLAY}" DISPLAY SOLAR_OS_B
 solar_os_require_board_driver("${SOLAR_OS_BOARD_HAS_UART}" UART SOLAR_OS_BOARD_UART_DRIVER)
 solar_os_require_board_driver("${SOLAR_OS_BOARD_HAS_SD}" SD SOLAR_OS_BOARD_STORAGE_DRIVER)
 solar_os_require_board_driver("${SOLAR_OS_BOARD_NEEDS_I2C}" I2C SOLAR_OS_BOARD_I2C_DRIVER)
+solar_os_require_board_driver("${SOLAR_OS_BOARD_HAS_SPI}" SPI SOLAR_OS_BOARD_SPI_DRIVER)
 solar_os_require_board_driver("${SOLAR_OS_BOARD_HAS_RTC}" RTC SOLAR_OS_BOARD_RTC_DRIVER)
 solar_os_require_board_driver("${SOLAR_OS_BOARD_HAS_SENSORS}" SENSORS SOLAR_OS_BOARD_SENSOR_DRIVER)
 solar_os_require_board_driver("${SOLAR_OS_BOARD_HAS_AUDIO}" AUDIO SOLAR_OS_BOARD_AUDIO_DRIVER)
