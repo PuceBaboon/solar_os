@@ -14,6 +14,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "sdkconfig.h"
 #include "nvs_flash.h"
 #if SOLAR_OS_BOARD_HAS_DISPLAY
 #include "solar_os_board_display.h"
@@ -74,7 +75,11 @@
 #define KEY_RELEASE_STABLE_TIMEOUT_MS 600
 #define KEY_WAKE_MASK (1ULL << SOLAR_OS_BOARD_PIN_KEY)
 #if SOLAR_OS_BOARD_KEY_ACTIVE_LEVEL == 0
+#if CONFIG_IDF_TARGET_ESP32
+#define KEY_WAKE_MODE ESP_EXT1_WAKEUP_ALL_LOW
+#else
 #define KEY_WAKE_MODE ESP_EXT1_WAKEUP_ANY_LOW
+#endif
 #else
 #define KEY_WAKE_MODE ESP_EXT1_WAKEUP_ANY_HIGH
 #endif
