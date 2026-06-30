@@ -17,6 +17,8 @@ members = [
   "service_sensors",
   "service_adc",
   "service_pwm",
+  "service_buttons",
+  "service_joystick",
   "job_bridge",
   "job_log",
   "job_batmon",
@@ -263,6 +265,18 @@ label = "service.pwm"
 sources = ["services/solar_os_pwm.c"]
 requires = ["esp_driver_gpio", "esp_driver_ledc"]
 capabilities = ["pwm", "gpio"]
+
+[packages.service_buttons]
+label = "service.buttons"
+sources = ["services/solar_os_buttons.c"]
+requires = ["esp_driver_gpio"]
+capabilities = ["buttons"]
+
+[packages.service_joystick]
+label = "service.joystick"
+sources = ["services/solar_os_joystick.c"]
+requires = ["esp_adc", "esp_driver_gpio"]
+capabilities = ["joystick"]
 
 [packages.app_aplay]
 label = "app.aplay"

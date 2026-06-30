@@ -25,6 +25,7 @@
 #include "solar_os_audio.h"
 #include "solar_os_battery.h"
 #include "solar_os_ble_keyboard.h"
+#include "solar_os_buttons.h"
 #include "solar_os_config.h"
 #if SOLAR_OS_PACKAGE_NET
 #include "solar_os_chat.h"
@@ -34,6 +35,7 @@
 #include "solar_os_gfx_internal.h"
 #include "solar_os_fonts.h"
 #include "solar_os_i2c.h"
+#include "solar_os_joystick.h"
 #include "solar_os_jobs.h"
 #include "solar_os_log.h"
 #include "solar_os_memory.h"
@@ -702,47 +704,89 @@ static void dispatch_char_to_foreground(char ch)
     solar_os_sessions_dispatch_foreground_event(&event);
 }
 
+static void dispatch_input_chars(const char *chars, size_t count)
+{
+    if (chars == NULL || count == 0) {
+        return;
+    }
+
+    solar_os_power_note_activity(millis_u32());
+    for (size_t i = 0; i < count; i++) {
+        const char ch = chars[i];
+
+        if ((uint8_t)ch == SOLAR_OS_KEY_ALT_PREFIX) {
+            if (alt_prefix_pending) {
+                dispatch_char_to_foreground((char)SOLAR_OS_KEY_ALT_PREFIX);
+            }
+            alt_prefix_pending = true;
+            continue;
+        }
+
+        if (alt_prefix_pending) {
+            alt_prefix_pending = false;
+            if (ch == '\t') {
+                solar_os_sessions_cycle_next();
+                process_app_requests();
+                continue;
+            }
+            dispatch_char_to_foreground((char)SOLAR_OS_KEY_ALT_PREFIX);
+        }
+
+        dispatch_char_to_foreground(ch);
+        process_app_requests();
+    }
+}
+
 static void dispatch_keyboard_chars(void)
 {
-    char chars[32];
-    size_t count;
-
 #if SOLAR_OS_PACKAGE_SERVICE_BLE
     if (!board_has(SOLAR_OS_BOARD_CAP_BLE)) {
         return;
     }
 
+    char chars[32];
+    size_t count;
     while ((count = solar_os_ble_keyboard_read_chars(chars, sizeof(chars))) > 0) {
-        solar_os_power_note_activity(millis_u32());
-        for (size_t i = 0; i < count; i++) {
-            const char ch = chars[i];
-
-            if ((uint8_t)ch == SOLAR_OS_KEY_ALT_PREFIX) {
-                if (alt_prefix_pending) {
-                    dispatch_char_to_foreground((char)SOLAR_OS_KEY_ALT_PREFIX);
-                }
-                alt_prefix_pending = true;
-                continue;
-            }
-
-            if (alt_prefix_pending) {
-                alt_prefix_pending = false;
-                if (ch == '\t') {
-                    solar_os_sessions_cycle_next();
-                    process_app_requests();
-                    continue;
-                }
-                dispatch_char_to_foreground((char)SOLAR_OS_KEY_ALT_PREFIX);
-            }
-
-            dispatch_char_to_foreground(ch);
-            process_app_requests();
-        }
+        dispatch_input_chars(chars, count);
     }
-#else
-    (void)chars;
-    (void)count;
 #endif
+}
+
+static void dispatch_button_chars(void)
+{
+#if SOLAR_OS_PACKAGE_SERVICE_BUTTONS
+    if (!board_has(SOLAR_OS_BOARD_CAP_BUTTONS)) {
+        return;
+    }
+
+    char chars[16];
+    size_t count;
+    while ((count = solar_os_buttons_read_chars(chars, sizeof(chars))) > 0) {
+        dispatch_input_chars(chars, count);
+    }
+#endif
+}
+
+static void dispatch_joystick_chars(void)
+{
+#if SOLAR_OS_PACKAGE_SERVICE_JOYSTICK
+    if (!board_has(SOLAR_OS_BOARD_CAP_JOYSTICK)) {
+        return;
+    }
+
+    char chars[8];
+    size_t count;
+    while ((count = solar_os_joystick_read_chars(chars, sizeof(chars))) > 0) {
+        dispatch_input_chars(chars, count);
+    }
+#endif
+}
+
+static void dispatch_input_sources(void)
+{
+    dispatch_keyboard_chars();
+    dispatch_button_chars();
+    dispatch_joystick_chars();
 }
 
 static void dispatch_app_tick(void)
@@ -927,6 +971,24 @@ static void init_peripherals(void)
     }
 #endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_BUTTONS
+    if (board_has(SOLAR_OS_BOARD_CAP_BUTTONS)) {
+        const esp_err_t buttons_err = solar_os_buttons_init();
+        if (buttons_err != ESP_OK) {
+            SOLAR_OS_LOGW(TAG, "Board buttons unavailable: %s", esp_err_to_name(buttons_err));
+        }
+    }
+#endif
+
+#if SOLAR_OS_PACKAGE_SERVICE_JOYSTICK
+    if (board_has(SOLAR_OS_BOARD_CAP_JOYSTICK)) {
+        const esp_err_t joystick_err = solar_os_joystick_init();
+        if (joystick_err != ESP_OK) {
+            SOLAR_OS_LOGW(TAG, "Joystick unavailable: %s", esp_err_to_name(joystick_err));
+        }
+    }
+#endif
+
 #if SOLAR_OS_PACKAGE_SERVICE_I2C
     if (board_has(SOLAR_OS_BOARD_CAP_I2C)) {
         const esp_err_t i2c_err = solar_os_i2c_init();
@@ -1104,9 +1166,9 @@ void app_main(void)
     while (true) {
         solar_os_power_poll();
         poll_key_button();
-        dispatch_keyboard_chars();
+        dispatch_input_sources();
         dispatch_app_tick();
-        dispatch_keyboard_chars();
+        dispatch_input_sources();
         process_app_requests();
         update_status();
 
