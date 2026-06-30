@@ -179,69 +179,12 @@ file(WRITE "${SOLAR_OS_GENERATED_OTA_KEY_HEADER}"
     "#define SOLAR_OS_OTA_PUBLIC_KEY_FILE \"${SOLAR_OS_OTA_PUBLIC_KEY_FILE}\"\n"
 )
 
-set(SOLAR_OS_SRCS
-    "main.c"
-    "solar_os.c"
-    "solar_os_jobs.c"
-    "solar_os_task.c"
-    "apps/solar_os_app_registry.c"
-    "apps/solar_os_shell.c"
-    "shell/solar_os_shell_common.c"
-    "shell/solar_os_shell_commands.c"
-    "shell/solar_os_shell_daq.c"
-    "shell/solar_os_shell_fs.c"
-    "shell/solar_os_shell_hardware.c"
-    "shell/solar_os_shell_io.c"
-    "shell/solar_os_shell_mqtt.c"
-    "shell/solar_os_shell_network.c"
-    "shell/solar_os_shell_setterm_tui.c"
-    "shell/solar_os_shell_system.c"
-    "shell/solar_os_shell_wifi_tui.c"
-    "shell/solar_os_vt100.c"
-    "jobs/solar_os_job_registry.c"
-    "services/solar_os_adc.c"
-    "services/solar_os_audio.c"
-    "services/solar_os_battery.c"
-    "services/solar_os_ble_keyboard.c"
-    "services/solar_os_board_caps.c"
-    "services/solar_os_cdc.c"
-    "services/solar_os_clipboard.c"
-    "services/solar_os_crypto.c"
-    "services/solar_os_doc.c"
-    "services/solar_os_epub.c"
-    "services/solar_os_gfx.c"
-    "services/solar_os_html.c"
-    "services/solar_os_gpio.c"
-    "services/solar_os_i2c.c"
-    "services/solar_os_identity.c"
-    "services/solar_os_json.c"
-    "services/solar_os_log.c"
-    "services/solar_os_memory.c"
-    "services/solar_os_ota.c"
-    "services/solar_os_port.c"
-    "services/solar_os_port_shell.c"
-    "services/solar_os_power.c"
-    "services/solar_os_pwm.c"
-    "services/solar_os_ramfs.c"
-    "services/solar_os_sensors.c"
-    "services/solar_os_sessions.c"
-    "services/solar_os_splash.c"
-    "services/solar_os_storage.c"
-    "services/solar_os_stream.c"
-    "services/solar_os_syntax.c"
-    "services/solar_os_terminal.c"
-    "services/solar_os_time.c"
-    "services/solar_os_transfer.c"
-    "services/solar_os_tui.c"
-    "services/solar_os_uart.c"
-    "services/solar_os_wifi.c"
-    "services/solar_os_xml.c"
-    "services/solar_os_zip.c"
-    "services/solar_os_zmodem.c"
-)
+set(SOLAR_OS_SRCS)
+set(SOLAR_OS_REQUIRES)
 
 if(SOLAR_OS_BOARD_HAS_CDC)
     list(APPEND SOLAR_OS_SRCS "drivers/cdc_port.c")
+    list(APPEND SOLAR_OS_REQUIRES esp_driver_usb_serial_jtag)
 endif()
 if(SOLAR_OS_BOARD_HAS_DISPLAY)
     if(NOT DEFINED SOLAR_OS_BOARD_DISPLAY_DRIVER OR
@@ -255,6 +198,11 @@ if(SOLAR_OS_BOARD_HAS_DISPLAY)
             "board/solar_os_board_display_st7305.c"
             "drivers/rlcd_st7305.c"
         )
+        list(APPEND SOLAR_OS_REQUIRES
+            esp_driver_gpio
+            esp_driver_spi
+            u8g2
+        )
     else()
         message(FATAL_ERROR
             "Unsupported SolarOS display driver for ${SOLAR_OS_BOARD_ID}: ${SOLAR_OS_BOARD_DISPLAY_DRIVER}"
@@ -263,6 +211,7 @@ if(SOLAR_OS_BOARD_HAS_DISPLAY)
 endif()
 if(SOLAR_OS_BOARD_HAS_UART)
     list(APPEND SOLAR_OS_SRCS "drivers/uart_port.c")
+    list(APPEND SOLAR_OS_REQUIRES esp_driver_uart)
 endif()
 if(SOLAR_OS_BOARD_HAS_SD)
     if(NOT DEFINED SOLAR_OS_BOARD_STORAGE_DRIVER OR
@@ -276,6 +225,12 @@ if(SOLAR_OS_BOARD_HAS_SD)
             "board/solar_os_board_storage_sdmmc.c"
             "drivers/sd_card.c"
         )
+        list(APPEND SOLAR_OS_REQUIRES
+            esp_driver_gpio
+            esp_driver_sdmmc
+            fatfs
+            sdmmc
+        )
     else()
         message(FATAL_ERROR
             "Unsupported SolarOS storage driver for ${SOLAR_OS_BOARD_ID}: ${SOLAR_OS_BOARD_STORAGE_DRIVER}"
@@ -288,6 +243,7 @@ if(SOLAR_OS_BOARD_HAS_I2C OR
         SOLAR_OS_BOARD_HAS_HUMIDITY OR
         SOLAR_OS_BOARD_HAS_AUDIO)
     list(APPEND SOLAR_OS_SRCS "drivers/i2c_bus.c")
+    list(APPEND SOLAR_OS_REQUIRES esp_driver_i2c)
 endif()
 if(SOLAR_OS_BOARD_HAS_RTC)
     if(NOT DEFINED SOLAR_OS_BOARD_RTC_DRIVER OR
@@ -337,6 +293,10 @@ if(SOLAR_OS_BOARD_HAS_AUDIO)
             "board/solar_os_board_audio_es8311_es7210.c"
             "drivers/audio_codec_board.c"
         )
+        list(APPEND SOLAR_OS_REQUIRES
+            esp_codec_dev
+            esp_driver_i2s
+        )
     else()
         message(FATAL_ERROR
             "Unsupported SolarOS audio driver for ${SOLAR_OS_BOARD_ID}: ${SOLAR_OS_BOARD_AUDIO_DRIVER}"
@@ -345,9 +305,14 @@ if(SOLAR_OS_BOARD_HAS_AUDIO)
 endif()
 if(SOLAR_OS_BOARD_HAS_GPIO)
     list(APPEND SOLAR_OS_SRCS "drivers/gpio_port.c")
+    list(APPEND SOLAR_OS_REQUIRES esp_driver_gpio)
 endif()
 if(SOLAR_OS_BOARD_HAS_ADC OR SOLAR_OS_BOARD_HAS_BATTERY)
     list(APPEND SOLAR_OS_SRCS "drivers/adc_port.c")
+    list(APPEND SOLAR_OS_REQUIRES
+        esp_adc
+        esp_driver_gpio
+    )
 endif()
 if(SOLAR_OS_BOARD_HAS_BATTERY)
     if(NOT DEFINED SOLAR_OS_BOARD_BATTERY_DRIVER OR
@@ -369,40 +334,11 @@ if(SOLAR_OS_BOARD_HAS_BATTERY)
 endif()
 if(SOLAR_OS_BOARD_HAS_PWM)
     list(APPEND SOLAR_OS_SRCS "drivers/pwm_port.c")
+    list(APPEND SOLAR_OS_REQUIRES
+        esp_driver_gpio
+        esp_driver_ledc
+    )
 endif()
-
-set(SOLAR_OS_REQUIRES
-    app_update
-    bt
-    esp-tls
-    esp_adc
-    esp_codec_dev
-    esp_driver_gpio
-    esp_driver_i2c
-    esp_driver_i2s
-    esp_driver_ledc
-    esp_driver_sdmmc
-    esp_driver_spi
-    esp_driver_uart
-    esp_driver_usb_serial_jtag
-    esp_event
-    esp_hid
-    esp_http_client
-    esp_https_ota
-    esp_netif
-    esp_pm
-    esp_rom
-    esp_timer
-    esp_wifi
-    fatfs
-    heap
-    json
-    lwip
-    mbedtls
-    nvs_flash
-    sdmmc
-    u8g2
-)
 
 list(APPEND SOLAR_OS_SRCS ${SOLAR_OS_PACKAGE_SRCS})
 list(APPEND SOLAR_OS_REQUIRES ${SOLAR_OS_PACKAGE_REQUIRES})

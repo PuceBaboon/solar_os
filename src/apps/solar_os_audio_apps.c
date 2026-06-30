@@ -522,6 +522,7 @@ static bool audio_app_event(solar_os_context_t *ctx, const solar_os_event_t *eve
     return true;
 }
 
+#if SOLAR_OS_PACKAGE_APP_ARECORD
 const solar_os_app_t solar_os_arecord_app = {
     .name = "arecord",
     .summary = "record WAV audio",
@@ -529,7 +530,9 @@ const solar_os_app_t solar_os_arecord_app = {
     .stop = audio_app_stop,
     .event = audio_app_event,
 };
+#endif
 
+#if SOLAR_OS_PACKAGE_APP_APLAY
 const solar_os_app_t solar_os_aplay_app = {
     .name = "aplay",
     .summary = "play WAV/MP3 audio",
@@ -537,3 +540,4 @@ const solar_os_app_t solar_os_aplay_app = {
     .stop = audio_app_stop,
     .event = audio_app_event,
 };
+#endif
