@@ -679,7 +679,22 @@ esp_err_t solar_os_audio_play_tone(uint32_t frequency_hz, uint32_t duration_ms, 
 #if !SOLAR_OS_BOARD_HAS_AUDIO
     return ESP_ERR_NOT_SUPPORTED;
 #else
-    esp_err_t ret = audio_apply_playback_volume(volume);
+    const uint8_t resolved_volume = audio_resolve_playback_volume(volume);
+    esp_err_t ret = solar_os_board_audio_play_tone(frequency_hz,
+                                                   duration_ms,
+                                                   resolved_volume);
+    if (ret == ESP_OK) {
+        SOLAR_OS_LOGI(TAG, "tone: %" PRIu32 " Hz %" PRIu32 " ms vol=%u",
+                 frequency_hz,
+                 duration_ms,
+                 resolved_volume);
+        return ESP_OK;
+    }
+    if (ret != ESP_ERR_NOT_SUPPORTED) {
+        return ret;
+    }
+
+    ret = audio_apply_playback_volume(volume);
     if (ret != ESP_OK) {
         return ret;
     }
@@ -714,7 +729,6 @@ esp_err_t solar_os_audio_play_tone(uint32_t frequency_hz, uint32_t duration_ms, 
 
     memset(samples, 0, sizeof(samples));
     (void)solar_os_board_audio_write(samples, sizeof(samples));
-    solar_os_board_audio_deinit();
     SOLAR_OS_LOGI(TAG, "tone: %" PRIu32 " Hz %" PRIu32 " ms vol=%u",
              frequency_hz,
              duration_ms,

@@ -42,6 +42,16 @@ esp_err_t solar_os_board_audio_set_mic_gain(float gain_db)
     return audio_codec_board_set_mic_gain(gain_db);
 }
 
+esp_err_t solar_os_board_audio_play_tone(uint32_t frequency_hz,
+                                         uint32_t duration_ms,
+                                         uint8_t volume)
+{
+    (void)frequency_hz;
+    (void)duration_ms;
+    (void)volume;
+    return ESP_ERR_NOT_SUPPORTED;
+}
+
 esp_err_t solar_os_board_audio_write(const void *data, size_t len)
 {
     return audio_codec_board_write(data, len);
@@ -62,4 +72,3 @@ void solar_os_board_audio_get_status(solar_os_board_audio_status_t *status)
     audio_codec_board_get_status(&driver_status);
     audio_status_from_driver(status, &driver_status);
 }
-

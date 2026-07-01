@@ -1507,6 +1507,14 @@ void solar_os_shell_cmd_audio(solar_os_context_t *ctx, int argc, char **argv)
             solar_os_shell_io_writeln(term, "usage: audio off");
             return;
         }
+        const esp_err_t err = solar_os_audio_set_volume(0);
+        if (err != ESP_OK) {
+            if (shell_print_not_supported(term, "audio", "audio hardware", err)) {
+                return;
+            }
+            solar_os_shell_io_printf(term, "audio off failed: %s\n", esp_err_to_name(err));
+            return;
+        }
         solar_os_audio_deinit();
         solar_os_shell_io_writeln(term, "audio: off");
     } else {
