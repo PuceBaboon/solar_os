@@ -9,6 +9,7 @@
 
 #include "solar_os_ble_keyboard.h"
 #include "solar_os_config.h"
+#include "solar_os_display.h"
 #include "solar_os_keys.h"
 #include "solar_os_ota.h"
 #include "solar_os_terminal.h"
@@ -32,6 +33,7 @@ typedef enum {
     SETTERM_TUI_ORIENTATION,
     SETTERM_TUI_FONT,
     SETTERM_TUI_TEXTSIZE,
+    SETTERM_TUI_BRIGHTNESS,
     SETTERM_TUI_KEYBOARD,
     SETTERM_TUI_KEYRATE,
     SETTERM_TUI_TIMEZONE,
@@ -61,6 +63,7 @@ static const setterm_tui_item_def_t setterm_tui_items[] = {
     [SETTERM_TUI_ORIENTATION] = {.label = "orientation"},
     [SETTERM_TUI_FONT] = {.label = "font"},
     [SETTERM_TUI_TEXTSIZE] = {.label = "textsize"},
+    [SETTERM_TUI_BRIGHTNESS] = {.label = "brightness"},
     [SETTERM_TUI_KEYBOARD] = {.label = "keyboard"},
     [SETTERM_TUI_KEYRATE] = {.label = "keyrate"},
     [SETTERM_TUI_TIMEZONE] = {.label = "timezone"},
@@ -121,6 +124,18 @@ static void setterm_tui_current_value(setterm_tui_item_t item, char *buffer, siz
                 solar_os_terminal_text_size_name(solar_os_terminal_text_size(term)),
                 buffer_len);
         break;
+    case SETTERM_TUI_BRIGHTNESS: {
+        uint8_t percent = 0;
+        const esp_err_t err = solar_os_display_get_brightness(&percent);
+        if (err == ESP_OK) {
+            snprintf(buffer, buffer_len, "%u", (unsigned)percent);
+        } else if (err == ESP_ERR_NOT_SUPPORTED) {
+            strlcpy(buffer, "unsupported", buffer_len);
+        } else {
+            strlcpy(buffer, "unavailable", buffer_len);
+        }
+        break;
+    }
     case SETTERM_TUI_KEYBOARD:
         strlcpy(buffer,
                 solar_os_ble_keyboard_layout_name(solar_os_ble_keyboard_layout()),
@@ -268,6 +283,7 @@ static bool setterm_tui_cycle_selected(int direction)
     static const char * const orientation_values[] = {"0", "90", "180", "270"};
     static const char * const font_values[] = {"mono", "compact"};
     static const char * const textsize_values[] = {"12", "14", "16", "18", "20"};
+    static const char * const brightness_values[] = {"0", "25", "50", "75", "100"};
     static const char * const keyboard_values[] = {"us", "de"};
 
     switch ((setterm_tui_item_t)setterm_tui.selected) {
@@ -282,6 +298,10 @@ static bool setterm_tui_cycle_selected(int direction)
     case SETTERM_TUI_TEXTSIZE:
         return setterm_tui_cycle_value(textsize_values,
                                        sizeof(textsize_values) / sizeof(textsize_values[0]),
+                                       direction);
+    case SETTERM_TUI_BRIGHTNESS:
+        return setterm_tui_cycle_value(brightness_values,
+                                       sizeof(brightness_values) / sizeof(brightness_values[0]),
                                        direction);
     case SETTERM_TUI_KEYBOARD:
         return setterm_tui_cycle_value(keyboard_values,
@@ -375,6 +395,11 @@ static bool setterm_tui_apply_selected(void)
         solar_os_terminal_text_size_t text_size;
         return solar_os_terminal_parse_text_size(setterm_tui.edit_text, &text_size) &&
             solar_os_terminal_set_text_size(term, text_size) == ESP_OK;
+    }
+    case SETTERM_TUI_BRIGHTNESS: {
+        size_t percent = 0;
+        return parse_size_arg(setterm_tui.edit_text, 0, 100, &percent) &&
+            solar_os_display_set_brightness((uint8_t)percent) == ESP_OK;
     }
     case SETTERM_TUI_KEYBOARD: {
         solar_os_ble_keyboard_layout_t layout;

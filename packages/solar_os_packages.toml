@@ -133,6 +133,7 @@ sources = [
   "services/solar_os_board_caps.c",
   "services/solar_os_cdc.c",
   "services/solar_os_clipboard.c",
+  "services/solar_os_display.c",
   "services/solar_os_gfx.c",
   "services/solar_os_identity.c",
   "services/solar_os_log.c",

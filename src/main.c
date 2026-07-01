@@ -32,6 +32,7 @@
 #include "solar_os_chat.h"
 #endif
 #include "solar_os_cdc.h"
+#include "solar_os_display.h"
 #include "solar_os_gpio.h"
 #include "solar_os_gfx_internal.h"
 #include "solar_os_fonts.h"
@@ -1196,6 +1197,12 @@ void app_main(void)
         const esp_err_t display_err = solar_os_board_display_init(&board_display);
         if (display_err == ESP_OK) {
             display_u8g2 = solar_os_board_display_u8g2(&board_display);
+            const esp_err_t display_service_err = solar_os_display_init(&board_display);
+            if (display_service_err != ESP_OK) {
+                SOLAR_OS_LOGW(TAG,
+                              "Display service unavailable: %s",
+                              esp_err_to_name(display_service_err));
+            }
             solar_os_gfx_init(&gfx, display_u8g2);
             solar_os_splash_clear(&gfx);
 

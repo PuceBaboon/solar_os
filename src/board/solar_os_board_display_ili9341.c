@@ -81,3 +81,27 @@ bool solar_os_board_display_ready(const solar_os_board_display_t *display)
 {
     return display != NULL && display->ready;
 }
+
+bool solar_os_board_display_brightness_supported(const solar_os_board_display_t *display)
+{
+    (void)display;
+    return tft_ili9341_backlight_supported();
+}
+
+esp_err_t solar_os_board_display_get_brightness(const solar_os_board_display_t *display,
+                                                uint8_t *percent)
+{
+    if (display == NULL || display->driver == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    return tft_ili9341_get_backlight((const tft_ili9341_t *)display->driver, percent);
+}
+
+esp_err_t solar_os_board_display_set_brightness(solar_os_board_display_t *display,
+                                                uint8_t percent)
+{
+    if (display == NULL || display->driver == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    return tft_ili9341_set_backlight((tft_ili9341_t *)display->driver, percent);
+}

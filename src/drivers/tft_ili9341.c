@@ -34,6 +34,16 @@
 #ifndef SOLAR_OS_BOARD_LCD_BACKLIGHT_ACTIVE_LEVEL
 #define SOLAR_OS_BOARD_LCD_BACKLIGHT_ACTIVE_LEVEL 1
 #endif
+#ifndef SOLAR_OS_BOARD_LCD_BACKLIGHT_PWM
+#define SOLAR_OS_BOARD_LCD_BACKLIGHT_PWM 0
+#endif
+#ifndef SOLAR_OS_BOARD_LCD_BACKLIGHT_PWM_FREQ_HZ
+#define SOLAR_OS_BOARD_LCD_BACKLIGHT_PWM_FREQ_HZ 20000U
+#endif
+
+#if SOLAR_OS_BOARD_LCD_BACKLIGHT_PWM
+#include "pwm_port.h"
+#endif
 
 #define ILI9341_SPI_CLOCK_HZ SOLAR_OS_BOARD_DISPLAY_SPI_CLOCK_HZ
 #define ILI9341_WIDTH SOLAR_OS_BOARD_DISPLAY_NATIVE_WIDTH
@@ -163,14 +173,52 @@ static bool ili9341_checked_cmd(tft_ili9341_t *display, uint8_t command)
     return true;
 }
 
-static void ili9341_set_backlight(bool on)
+static bool ili9341_backlight_supported(void)
 {
 #ifdef SOLAR_OS_BOARD_PIN_LCD_BL
-    if (gpio_valid(SOLAR_OS_BOARD_PIN_LCD_BL)) {
-        const int active = SOLAR_OS_BOARD_LCD_BACKLIGHT_ACTIVE_LEVEL ? 1 : 0;
-        gpio_set_level(SOLAR_OS_BOARD_PIN_LCD_BL, on ? active : !active);
-    }
+    return gpio_valid(SOLAR_OS_BOARD_PIN_LCD_BL);
+#else
+    return false;
 #endif
+}
+
+static uint8_t ili9341_backlight_duty(uint8_t percent)
+{
+    if (percent > 100) {
+        percent = 100;
+    }
+    return SOLAR_OS_BOARD_LCD_BACKLIGHT_ACTIVE_LEVEL ? percent : (uint8_t)(100U - percent);
+}
+
+static esp_err_t ili9341_apply_backlight(uint8_t percent)
+{
+    if (!ili9341_backlight_supported()) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+#if SOLAR_OS_BOARD_LCD_BACKLIGHT_PWM
+    return pwm_port_set(SOLAR_OS_BOARD_PIN_LCD_BL,
+                        SOLAR_OS_BOARD_LCD_BACKLIGHT_PWM_FREQ_HZ,
+                        ili9341_backlight_duty(percent));
+#else
+    const int active = SOLAR_OS_BOARD_LCD_BACKLIGHT_ACTIVE_LEVEL ? 1 : 0;
+    return gpio_set_level(SOLAR_OS_BOARD_PIN_LCD_BL, percent > 0 ? active : !active);
+#endif
+}
+
+static void ili9341_set_backlight_power(tft_ili9341_t *display, bool on)
+{
+    if (display == NULL) {
+        return;
+    }
+
+    display->backlight_power = on;
+    const uint8_t percent = on ? display->backlight_percent : 0;
+    const esp_err_t err = ili9341_apply_backlight(percent);
+    if (err != ESP_OK && err != ESP_ERR_NOT_SUPPORTED) {
+        display->last_error = err;
+        ESP_LOGW(TAG, "backlight set failed: %s", esp_err_to_name(err));
+    }
 }
 
 static esp_err_t ili9341_configure_control_pins(void)
@@ -202,7 +250,6 @@ static esp_err_t ili9341_configure_control_pins(void)
         ESP_RETURN_ON_ERROR(gpio_set_level(SOLAR_OS_BOARD_PIN_LCD_RST, 1), TAG, "rst high failed");
     }
 #endif
-    ili9341_set_backlight(false);
     return ESP_OK;
 }
 
@@ -459,7 +506,7 @@ static esp_err_t ili9341_full_init(tft_ili9341_t *display)
         return display->last_error;
     }
     vTaskDelay(pdMS_TO_TICKS(20));
-    ili9341_set_backlight(true);
+    ili9341_set_backlight_power(display, true);
 
     ili9341_invalidate_shadow(display);
     display->last_error = ESP_OK;
@@ -497,10 +544,10 @@ static uint8_t ili9341_u8x8_display_cb(u8x8_t *u8x8,
     case U8X8_MSG_DISPLAY_SET_POWER_SAVE:
         ili9341_invalidate_shadow(display);
         if (arg_int == 0) {
-            ili9341_set_backlight(true);
+            ili9341_set_backlight_power(display, true);
             return ili9341_cmd(display, 0x29) == ESP_OK ? 1 : 0;
         }
-        ili9341_set_backlight(false);
+        ili9341_set_backlight_power(display, false);
         return ili9341_cmd(display, 0x28) == ESP_OK ? 1 : 0;
 
     case U8X8_MSG_DISPLAY_DRAW_TILE:
@@ -519,8 +566,10 @@ esp_err_t tft_ili9341_init(tft_ili9341_t *display)
 
     memset(display, 0, sizeof(*display));
     display->last_error = ESP_OK;
+    display->backlight_percent = 100;
 
     ESP_RETURN_ON_ERROR(ili9341_configure_control_pins(), TAG, "control pin config failed");
+    ili9341_set_backlight_power(display, false);
     ESP_RETURN_ON_ERROR(solar_os_spi_bus_acquire(), TAG, "spi bus acquire failed");
     display->bus_acquired = true;
 
@@ -604,7 +653,7 @@ void tft_ili9341_deinit(tft_ili9341_t *display)
         return;
     }
 
-    ili9341_set_backlight(false);
+    ili9341_set_backlight_power(display, false);
 
     if (display->spi != NULL) {
         spi_bus_remove_device(display->spi);
@@ -642,4 +691,46 @@ void tft_ili9341_deinit(tft_ili9341_t *display)
 u8g2_t *tft_ili9341_get_u8g2(tft_ili9341_t *display)
 {
     return display == NULL ? NULL : &display->u8g2;
+}
+
+bool tft_ili9341_backlight_supported(void)
+{
+    return ili9341_backlight_supported();
+}
+
+esp_err_t tft_ili9341_get_backlight(const tft_ili9341_t *display, uint8_t *percent)
+{
+    if (percent == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (display == NULL) {
+        *percent = 0;
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (!ili9341_backlight_supported()) {
+        *percent = 100;
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    *percent = display->backlight_percent;
+    return ESP_OK;
+}
+
+esp_err_t tft_ili9341_set_backlight(tft_ili9341_t *display, uint8_t percent)
+{
+    if (display == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (percent > 100) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!ili9341_backlight_supported()) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    display->backlight_percent = percent;
+    if (display->backlight_power) {
+        return ili9341_apply_backlight(percent);
+    }
+    return ESP_OK;
 }

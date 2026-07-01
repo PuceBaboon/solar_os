@@ -81,3 +81,27 @@ bool solar_os_board_display_ready(const solar_os_board_display_t *display)
 {
     return display != NULL && display->ready;
 }
+
+bool solar_os_board_display_brightness_supported(const solar_os_board_display_t *display)
+{
+    (void)display;
+    return false;
+}
+
+esp_err_t solar_os_board_display_get_brightness(const solar_os_board_display_t *display,
+                                                uint8_t *percent)
+{
+    (void)display;
+    if (percent != NULL) {
+        *percent = 100;
+    }
+    return percent != NULL ? ESP_ERR_NOT_SUPPORTED : ESP_ERR_INVALID_ARG;
+}
+
+esp_err_t solar_os_board_display_set_brightness(solar_os_board_display_t *display,
+                                                uint8_t percent)
+{
+    (void)display;
+    (void)percent;
+    return ESP_ERR_NOT_SUPPORTED;
+}

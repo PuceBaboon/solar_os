@@ -65,6 +65,8 @@
 #define SOLAR_OS_BOARD_PIN_LCD_TE GPIO_NUM_NC
 #define SOLAR_OS_BOARD_PIN_LCD_BL SOLAR_OS_BOARD_PIN_TFT_LED
 #define SOLAR_OS_BOARD_LCD_BACKLIGHT_ACTIVE_LEVEL 1
+#define SOLAR_OS_BOARD_LCD_BACKLIGHT_PWM 1
+#define SOLAR_OS_BOARD_LCD_BACKLIGHT_PWM_FREQ_HZ 20000U
 
 #define SOLAR_OS_BOARD_PIN_KEY GPIO_NUM_39
 #define SOLAR_OS_BOARD_KEY_ACTIVE_LEVEL 0
@@ -91,6 +93,7 @@
 #define SOLAR_OS_BOARD_USER_GPIO_LIST "4 15"
 #define SOLAR_OS_BOARD_GPIO_SLOTS { \
     {.pin = 2, .runtime_allowed = false, .role = "status LED"}, \
+    {.pin = 14, .runtime_allowed = false, .role = "LCD backlight"}, \
     {.pin = 4, .runtime_allowed = true, .role = "external IO / SPI CS"}, \
     {.pin = 15, .runtime_allowed = true, .role = "external IO / SPI CS"}, \
 }

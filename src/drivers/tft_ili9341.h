@@ -23,13 +23,18 @@ typedef struct {
     size_t line_buffer_size;
     uint64_t shadow_valid_rows;
     esp_err_t last_error;
+    uint8_t backlight_percent;
     bool bus_acquired;
+    bool backlight_power;
 } tft_ili9341_t;
 
 esp_err_t tft_ili9341_init(tft_ili9341_t *display);
 esp_err_t tft_ili9341_resume(tft_ili9341_t *display);
 void tft_ili9341_deinit(tft_ili9341_t *display);
 u8g2_t *tft_ili9341_get_u8g2(tft_ili9341_t *display);
+bool tft_ili9341_backlight_supported(void);
+esp_err_t tft_ili9341_get_backlight(const tft_ili9341_t *display, uint8_t *percent);
+esp_err_t tft_ili9341_set_backlight(tft_ili9341_t *display, uint8_t percent);
 
 #ifdef __cplusplus
 }
