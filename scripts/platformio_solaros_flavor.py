@@ -50,12 +50,13 @@ if os.environ.get("SOLAR_OS_BOARD"):
 stamp_dir = build_dir / "generated" / "solar_os"
 stamp_path = stamp_dir / "platformio_build_selection.txt"
 board_files = tuple(sorted((project_dir / "boards").rglob("*.cmake")))
+sdkconfig_default_files = tuple(sorted(project_dir.glob("sdkconfig.defaults*")))
 tracked_files = (
     flavor_file,
     project_dir / "packages" / "solar_os_packages.toml",
     project_dir / "scripts" / "generate_flavor_config.py",
     project_dir / "src" / "CMakeLists.txt",
-) + board_files
+) + board_files + sdkconfig_default_files
 stamp = f"board={board}\nflavor={flavor}\n"
 for tracked_file in tracked_files:
     stat = tracked_file.stat()

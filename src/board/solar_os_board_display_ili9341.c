@@ -2,15 +2,15 @@
 
 #include <string.h>
 
-#include "rlcd_st7305.h"
 #include "solar_os_board.h"
+#include "tft_ili9341.h"
 
-static rlcd_st7305_t st7305_display;
+static tft_ili9341_t ili9341_display;
 
-static void display_bind_st7305(solar_os_board_display_t *display)
+static void display_bind_ili9341(solar_os_board_display_t *display)
 {
-    display->driver = &st7305_display;
-    display->u8g2 = rlcd_st7305_get_u8g2(&st7305_display);
+    display->driver = &ili9341_display;
+    display->u8g2 = tft_ili9341_get_u8g2(&ili9341_display);
     display->controller = SOLAR_OS_BOARD_DISPLAY_CONTROLLER;
     display->width = SOLAR_OS_BOARD_DISPLAY_WIDTH;
     display->height = SOLAR_OS_BOARD_DISPLAY_HEIGHT;
@@ -24,12 +24,12 @@ esp_err_t solar_os_board_display_init(solar_os_board_display_t *display)
     }
 
     memset(display, 0, sizeof(*display));
-    const esp_err_t err = rlcd_st7305_init(&st7305_display);
+    const esp_err_t err = tft_ili9341_init(&ili9341_display);
     if (err != ESP_OK) {
         return err;
     }
 
-    display_bind_st7305(display);
+    display_bind_ili9341(display);
     return ESP_OK;
 }
 
@@ -39,20 +39,20 @@ esp_err_t solar_os_board_display_resume(solar_os_board_display_t *display)
         return ESP_ERR_INVALID_STATE;
     }
 
-    const esp_err_t err = rlcd_st7305_resume((rlcd_st7305_t *)display->driver);
+    const esp_err_t err = tft_ili9341_resume((tft_ili9341_t *)display->driver);
     if (err != ESP_OK) {
         display->ready = false;
         return err;
     }
 
-    display_bind_st7305(display);
+    display_bind_ili9341(display);
     return ESP_OK;
 }
 
 void solar_os_board_display_deinit(solar_os_board_display_t *display)
 {
     if (display != NULL && display->driver != NULL) {
-        rlcd_st7305_deinit((rlcd_st7305_t *)display->driver);
+        tft_ili9341_deinit((tft_ili9341_t *)display->driver);
         memset(display, 0, sizeof(*display));
     }
 }
@@ -85,23 +85,23 @@ bool solar_os_board_display_ready(const solar_os_board_display_t *display)
 bool solar_os_board_display_brightness_supported(const solar_os_board_display_t *display)
 {
     (void)display;
-    return false;
+    return tft_ili9341_backlight_supported();
 }
 
 esp_err_t solar_os_board_display_get_brightness(const solar_os_board_display_t *display,
                                                 uint8_t *percent)
 {
-    (void)display;
-    if (percent != NULL) {
-        *percent = 100;
+    if (display == NULL || display->driver == NULL) {
+        return ESP_ERR_INVALID_STATE;
     }
-    return percent != NULL ? ESP_ERR_NOT_SUPPORTED : ESP_ERR_INVALID_ARG;
+    return tft_ili9341_get_backlight((const tft_ili9341_t *)display->driver, percent);
 }
 
 esp_err_t solar_os_board_display_set_brightness(solar_os_board_display_t *display,
                                                 uint8_t percent)
 {
-    (void)display;
-    (void)percent;
-    return ESP_ERR_NOT_SUPPORTED;
+    if (display == NULL || display->driver == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    return tft_ili9341_set_backlight((tft_ili9341_t *)display->driver, percent);
 }

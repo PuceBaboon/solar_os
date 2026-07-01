@@ -24,6 +24,7 @@
 #include "solar_os_ramfs.h"
 #include "solar_os_shell_common.h"
 #include "solar_os_shell_io.h"
+#include "solar_os_spi.h"
 #include "solar_os_storage.h"
 #include "solar_os_time.h"
 #include "solar_os_uart.h"
@@ -67,6 +68,7 @@ static void format_bytes(uint64_t bytes, char *buffer, size_t buffer_len)
              units[unit_index]);
 }
 
+#if SOLAR_OS_PACKAGE_SERVICE_AUDIO
 static void audio_print_gain(solar_os_shell_io_t *term, float gain_db)
 {
     int tenths = (int)((gain_db * 10.0f) + (gain_db >= 0.0f ? 0.5f : -0.5f));
@@ -79,6 +81,7 @@ static void audio_print_gain(solar_os_shell_io_t *term, float gain_db)
 
     solar_os_shell_io_printf(term, "%s%d.%u dB", sign, tenths / 10, (unsigned)(tenths % 10));
 }
+#endif
 
 void solar_os_shell_cmd_board(solar_os_context_t *ctx, int argc, char **argv)
 {
@@ -626,27 +629,49 @@ void solar_os_shell_cmd_power(solar_os_context_t *ctx, int argc, char **argv)
 
 void solar_os_shell_cmd_status(solar_os_context_t *ctx, int argc, char **argv)
 {
+#if SOLAR_OS_PACKAGE_SERVICE_BLE
     char ble_status[64];
+#endif
     char sd_status[64];
+#if SOLAR_OS_PACKAGE_SERVICE_WIFI
     char wifi_status[64];
+#endif
     char uptime[32];
+#if SOLAR_OS_PACKAGE_SERVICE_BATTERY
     solar_os_battery_status_t battery_status;
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_AUDIO
     solar_os_audio_status_t audio_status;
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_UART
     solar_os_uart_status_t uart_status;
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_SPI
+    solar_os_spi_status_t spi_status;
+#endif
     solar_os_shell_io_t *term = terminal(ctx);
 
     (void)argc;
     (void)argv;
 
-    solar_os_ble_keyboard_get_status(ble_status, sizeof(ble_status));
     solar_os_storage_get_status(sd_status, sizeof(sd_status));
+#if SOLAR_OS_PACKAGE_SERVICE_BLE
+    solar_os_ble_keyboard_get_status(ble_status, sizeof(ble_status));
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_WIFI
     solar_os_wifi_get_status_text(wifi_status, sizeof(wifi_status));
+#endif
     solar_os_time_format_uptime(solar_os_time_uptime_ms(), uptime, sizeof(uptime));
 
+#if SOLAR_OS_PACKAGE_SERVICE_BLE
     solar_os_shell_io_printf(term, "BLE: %s\n", ble_status);
+#endif
     solar_os_shell_io_printf(term, "SD: %s\n", sd_status);
+#if SOLAR_OS_PACKAGE_SERVICE_WIFI
     solar_os_shell_io_printf(term, "WiFi: %s\n", wifi_status);
+#endif
     solar_os_shell_io_printf(term, "Uptime: %s\n", uptime);
+#if SOLAR_OS_PACKAGE_SERVICE_BATTERY
     const esp_err_t battery_err = solar_os_battery_get_status(&battery_status);
     if (battery_err == ESP_OK) {
         solar_os_shell_io_printf(term,
@@ -659,10 +684,12 @@ void solar_os_shell_cmd_status(solar_os_context_t *ctx, int argc, char **argv)
     } else {
         solar_os_shell_io_printf(term, "Battery: unavailable (%s)\n", esp_err_to_name(battery_err));
     }
+#endif
     solar_os_shell_io_printf(term,
                              "Heap: internal %u, PSRAM %u\n",
                              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
                              (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+#if SOLAR_OS_PACKAGE_SERVICE_I2C
     if (solar_os_board_has(SOLAR_OS_BOARD_CAP_I2C)) {
         solar_os_shell_io_printf(term,
                                  "I2C: SDA %d, SCL %d, %" PRIu32 " Hz\n",
@@ -672,6 +699,27 @@ void solar_os_shell_cmd_status(solar_os_context_t *ctx, int argc, char **argv)
     } else {
         solar_os_shell_io_writeln(term, "I2C: not available on this board");
     }
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_SPI
+    if (solar_os_spi_get_status(&spi_status) == ESP_OK && spi_status.available) {
+        solar_os_shell_io_printf(term,
+                                 "%s: SCK %d, MISO %d, MOSI %d, CS",
+                                 spi_status.name != NULL ? spi_status.name : "SPI",
+                                 spi_status.sclk_pin,
+                                 spi_status.miso_pin,
+                                 spi_status.mosi_pin);
+        for (size_t i = 0; i < spi_status.cs_count; i++) {
+            solar_os_shell_io_printf(term,
+                                     " %s(GPIO%d)",
+                                     spi_status.cs[i].name,
+                                     spi_status.cs[i].pin);
+        }
+        solar_os_shell_io_put_char(term, '\n');
+    } else {
+        solar_os_shell_io_writeln(term, "SPI: not available on this board");
+    }
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_AUDIO
     solar_os_audio_get_status(&audio_status);
     if (solar_os_board_has(SOLAR_OS_BOARD_CAP_AUDIO)) {
         solar_os_shell_io_printf(term,
@@ -686,6 +734,8 @@ void solar_os_shell_cmd_status(solar_os_context_t *ctx, int argc, char **argv)
     } else {
         solar_os_shell_io_writeln(term, "Audio: not available on this board");
     }
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_UART
     solar_os_uart_get_status(&uart_status);
     if (uart_status.initialized) {
         if (uart_status.rx_buffered_valid) {
@@ -717,6 +767,7 @@ void solar_os_shell_cmd_status(solar_os_context_t *ctx, int argc, char **argv)
             solar_os_shell_io_writeln(term, "UART: not available on this board");
         }
     }
+#endif
 }
 
 void solar_os_shell_cmd_uptime(solar_os_context_t *ctx, int argc, char **argv)

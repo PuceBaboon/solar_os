@@ -11,6 +11,7 @@
 #define SOLAR_OS_AUDIO_TEST_MAX_MS 10000U
 #define SOLAR_OS_AUDIO_WAV_MAX_MS (60U * 60U * 1000U)
 #define SOLAR_OS_AUDIO_WAV_DEFAULT_PROGRESS_MS 1000U
+#define SOLAR_OS_AUDIO_VOLUME_GLOBAL 255U
 
 typedef struct {
     bool initialized;
@@ -65,6 +66,7 @@ typedef struct {
 esp_err_t solar_os_audio_init(void);
 void solar_os_audio_deinit(void);
 esp_err_t solar_os_audio_set_volume(uint8_t volume);
+esp_err_t solar_os_audio_toggle_mute(uint8_t *volume_after);
 esp_err_t solar_os_audio_set_mic_gain(float gain_db);
 esp_err_t solar_os_audio_play_tone(uint32_t frequency_hz, uint32_t duration_ms, uint8_t volume);
 esp_err_t solar_os_audio_measure_level(uint32_t duration_ms, solar_os_audio_level_t *level);

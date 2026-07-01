@@ -45,6 +45,7 @@
 #include "solar_os_sensors.h"
 #include "solar_os_shell_io.h"
 #include "solar_os_ssh_keys.h"
+#include "solar_os_status_led.h"
 #include "solar_os_storage.h"
 #include "solar_os_terminal.h"
 #include "solar_os_time.h"
@@ -1444,6 +1445,44 @@ static mp_obj_t solaros_gpio_write(mp_obj_t pin_obj, mp_obj_t level_obj)
 }
 MP_DEFINE_CONST_FUN_OBJ_2(solaros_gpio_write_obj, solaros_gpio_write);
 
+static mp_obj_t solaros_led_status(void)
+{
+    bool on = false;
+    python_check_esp(solar_os_status_led_get(&on));
+    return mp_obj_new_bool(on);
+}
+MP_DEFINE_CONST_FUN_OBJ_0(solaros_led_status_obj, solaros_led_status);
+
+static mp_obj_t solaros_led_set(mp_obj_t on_obj)
+{
+    const bool on = mp_obj_is_true(on_obj);
+    python_check_esp(solar_os_status_led_set(on));
+    return mp_obj_new_bool(on);
+}
+MP_DEFINE_CONST_FUN_OBJ_1(solaros_led_set_obj, solaros_led_set);
+
+static mp_obj_t solaros_led_on(void)
+{
+    python_check_esp(solar_os_status_led_set(true));
+    return mp_const_true;
+}
+MP_DEFINE_CONST_FUN_OBJ_0(solaros_led_on_obj, solaros_led_on);
+
+static mp_obj_t solaros_led_off(void)
+{
+    python_check_esp(solar_os_status_led_set(false));
+    return mp_const_false;
+}
+MP_DEFINE_CONST_FUN_OBJ_0(solaros_led_off_obj, solaros_led_off);
+
+static mp_obj_t solaros_led_toggle(void)
+{
+    bool on = false;
+    python_check_esp(solar_os_status_led_toggle(&on));
+    return mp_obj_new_bool(on);
+}
+MP_DEFINE_CONST_FUN_OBJ_0(solaros_led_toggle_obj, solaros_led_toggle);
+
 static mp_obj_t python_adc_info_to_dict(const solar_os_adc_pin_info_t *info)
 {
     mp_obj_t dict = mp_obj_new_dict(5);
@@ -1706,7 +1745,10 @@ static mp_obj_t solaros_audio_tone(size_t n_args, const mp_obj_t *args)
 {
     const uint32_t frequency_hz = python_optional_u32(n_args, args, 0, 0);
     const uint32_t duration_ms = python_optional_u32(n_args, args, 1, 0);
-    const uint8_t volume = python_optional_u8(n_args, args, 2, 50);
+    const uint8_t volume = python_optional_u8(n_args,
+                                              args,
+                                              2,
+                                              SOLAR_OS_AUDIO_VOLUME_GLOBAL);
     python_check_esp(solar_os_audio_play_tone(frequency_hz, duration_ms, volume));
     return mp_const_none;
 }
@@ -1728,7 +1770,10 @@ MP_DEFINE_CONST_FUN_OBJ_1(solaros_audio_level_obj, solaros_audio_level);
 static mp_obj_t solaros_audio_loopback(size_t n_args, const mp_obj_t *args)
 {
     const uint32_t duration_ms = python_optional_u32(n_args, args, 0, 0);
-    const uint8_t volume = python_optional_u8(n_args, args, 1, 50);
+    const uint8_t volume = python_optional_u8(n_args,
+                                              args,
+                                              1,
+                                              SOLAR_OS_AUDIO_VOLUME_GLOBAL);
     python_check_esp(solar_os_audio_loopback(duration_ms, volume));
     return mp_const_none;
 }
@@ -1769,7 +1814,10 @@ static mp_obj_t solaros_audio_play_wav(size_t n_args, const mp_obj_t *args)
 {
     char path[SOLAR_OS_STORAGE_PATH_MAX];
     python_resolve_path_obj(args[0], path, sizeof(path));
-    const uint8_t volume = python_optional_u8(n_args, args, 1, 50);
+    const uint8_t volume = python_optional_u8(n_args,
+                                              args,
+                                              1,
+                                              SOLAR_OS_AUDIO_VOLUME_GLOBAL);
 
     solar_os_audio_wav_info_t info;
     const solar_os_audio_wav_options_t options = {
@@ -2708,6 +2756,13 @@ static void python_register_solaros_module(void)
     python_module_store(gpio, "read", MP_OBJ_FROM_PTR(&solaros_gpio_read_obj));
     python_module_store(gpio, "write", MP_OBJ_FROM_PTR(&solaros_gpio_write_obj));
 
+    mp_obj_t led = python_new_submodule(module, "led");
+    python_module_store(led, "status", MP_OBJ_FROM_PTR(&solaros_led_status_obj));
+    python_module_store(led, "set", MP_OBJ_FROM_PTR(&solaros_led_set_obj));
+    python_module_store(led, "on", MP_OBJ_FROM_PTR(&solaros_led_on_obj));
+    python_module_store(led, "off", MP_OBJ_FROM_PTR(&solaros_led_off_obj));
+    python_module_store(led, "toggle", MP_OBJ_FROM_PTR(&solaros_led_toggle_obj));
+
     mp_obj_t adc = python_new_submodule(module, "adc");
     python_module_store(adc, "pins", MP_OBJ_FROM_PTR(&solaros_adc_pins_obj));
     python_module_store(adc, "read", MP_OBJ_FROM_PTR(&solaros_adc_read_obj));
@@ -2806,6 +2861,8 @@ static void python_register_solaros_module(void)
     python_module_store(tui, "KEY_DELETE", mp_obj_new_int(SOLAR_OS_KEY_DELETE));
     python_module_store(tui, "KEY_ESCAPE", mp_obj_new_int(SOLAR_OS_KEY_ESCAPE));
     python_module_store(tui, "KEY_CTRL", mp_obj_new_int(SOLAR_OS_KEY_CTRL));
+    python_module_store(tui, "KEY_AUDIO_MUTE_TOGGLE",
+                        mp_obj_new_int(SOLAR_OS_KEY_AUDIO_MUTE_TOGGLE));
     python_module_store(tui, "KEY_PAGE_UP", mp_obj_new_int(SOLAR_OS_KEY_PAGE_UP));
     python_module_store(tui, "KEY_PAGE_DOWN", mp_obj_new_int(SOLAR_OS_KEY_PAGE_DOWN));
     python_module_store(tui, "rows", MP_OBJ_FROM_PTR(&solaros_tui_rows_obj));
@@ -2862,6 +2919,8 @@ static void python_register_solaros_module(void)
     python_module_store(gfx, "KEY_DELETE", mp_obj_new_int(SOLAR_OS_KEY_DELETE));
     python_module_store(gfx, "KEY_ESCAPE", mp_obj_new_int(SOLAR_OS_KEY_ESCAPE));
     python_module_store(gfx, "KEY_CTRL", mp_obj_new_int(SOLAR_OS_KEY_CTRL));
+    python_module_store(gfx, "KEY_AUDIO_MUTE_TOGGLE",
+                        mp_obj_new_int(SOLAR_OS_KEY_AUDIO_MUTE_TOGGLE));
     python_module_store(gfx, "KEY_PAGE_UP", mp_obj_new_int(SOLAR_OS_KEY_PAGE_UP));
     python_module_store(gfx, "KEY_PAGE_DOWN", mp_obj_new_int(SOLAR_OS_KEY_PAGE_DOWN));
     python_module_store(gfx, "begin", MP_OBJ_FROM_PTR(&solaros_gfx_begin_obj));

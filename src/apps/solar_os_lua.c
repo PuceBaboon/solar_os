@@ -39,6 +39,7 @@
 #include "solar_os_pwm.h"
 #include "solar_os_sensors.h"
 #include "solar_os_shell_io.h"
+#include "solar_os_status_led.h"
 #include "solar_os_storage.h"
 #include "solar_os_terminal.h"
 #include "solar_os_time.h"
@@ -1373,6 +1374,44 @@ static int solua_gpio_write(lua_State *L)
                                                lua_toboolean(L, 2)));
 }
 
+static int solua_led_status(lua_State *L)
+{
+    bool on = false;
+    (void)solua_check_esp(L, solar_os_status_led_get(&on));
+    lua_pushboolean(L, on);
+    return 1;
+}
+
+static int solua_led_set(lua_State *L)
+{
+    const bool on = lua_toboolean(L, 1);
+    (void)solua_check_esp(L, solar_os_status_led_set(on));
+    lua_pushboolean(L, on);
+    return 1;
+}
+
+static int solua_led_on(lua_State *L)
+{
+    (void)solua_check_esp(L, solar_os_status_led_set(true));
+    lua_pushboolean(L, true);
+    return 1;
+}
+
+static int solua_led_off(lua_State *L)
+{
+    (void)solua_check_esp(L, solar_os_status_led_set(false));
+    lua_pushboolean(L, false);
+    return 1;
+}
+
+static int solua_led_toggle(lua_State *L)
+{
+    bool on = false;
+    (void)solua_check_esp(L, solar_os_status_led_toggle(&on));
+    lua_pushboolean(L, on);
+    return 1;
+}
+
 static int solua_adc_pins(lua_State *L)
 {
     lua_newtable(L);
@@ -1583,7 +1622,9 @@ static int solua_audio_tone(lua_State *L)
     return solua_check_esp(L,
                            solar_os_audio_play_tone(solua_check_u32(L, 1),
                                                     solua_check_u32(L, 2),
-                                                    solua_optional_u8(L, 3, 50)));
+                                                    solua_optional_u8(L,
+                                                                      3,
+                                                                      SOLAR_OS_AUDIO_VOLUME_GLOBAL)));
 }
 
 static int solua_audio_level(lua_State *L)
@@ -1603,7 +1644,9 @@ static int solua_audio_loopback(lua_State *L)
 {
     return solua_check_esp(L,
                            solar_os_audio_loopback(solua_check_u32(L, 1),
-                                                   solua_optional_u8(L, 2, 50)));
+                                                   solua_optional_u8(L,
+                                                                     2,
+                                                                     SOLAR_OS_AUDIO_VOLUME_GLOBAL)));
 }
 
 static int solua_audio_wav_info(lua_State *L)
@@ -1652,7 +1695,9 @@ static int solua_audio_play_wav(lua_State *L)
     };
     (void)solua_check_esp(L,
                           solar_os_audio_play_wav(path,
-                                                  solua_optional_u8(L, 2, 50),
+                                                  solua_optional_u8(L,
+                                                                    2,
+                                                                    SOLAR_OS_AUDIO_VOLUME_GLOBAL),
                                                   &options,
                                                   &info));
     solua_push_wav_info(L, &info);
@@ -2493,6 +2538,15 @@ static void solua_open_solaros(lua_State *L)
     solua_set_func(L, mod, "write", solua_gpio_write);
     lua_pop(L, 1);
 
+    solua_new_submodule(L, solaros, "led");
+    mod = lua_gettop(L);
+    solua_set_func(L, mod, "status", solua_led_status);
+    solua_set_func(L, mod, "set", solua_led_set);
+    solua_set_func(L, mod, "on", solua_led_on);
+    solua_set_func(L, mod, "off", solua_led_off);
+    solua_set_func(L, mod, "toggle", solua_led_toggle);
+    lua_pop(L, 1);
+
     solua_new_submodule(L, solaros, "adc");
     mod = lua_gettop(L);
     solua_set_func(L, mod, "pins", solua_adc_pins);
@@ -2614,6 +2668,7 @@ static void solua_open_solaros(lua_State *L)
     solua_set_int(L, mod, "KEY_DELETE", SOLAR_OS_KEY_DELETE);
     solua_set_int(L, mod, "KEY_ESCAPE", SOLAR_OS_KEY_ESCAPE);
     solua_set_int(L, mod, "KEY_CTRL", SOLAR_OS_KEY_CTRL);
+    solua_set_int(L, mod, "KEY_AUDIO_MUTE_TOGGLE", SOLAR_OS_KEY_AUDIO_MUTE_TOGGLE);
     solua_set_int(L, mod, "KEY_PAGE_UP", SOLAR_OS_KEY_PAGE_UP);
     solua_set_int(L, mod, "KEY_PAGE_DOWN", SOLAR_OS_KEY_PAGE_DOWN);
     solua_set_func(L, mod, "rows", solua_tui_rows);
@@ -2672,6 +2727,7 @@ static void solua_open_solaros(lua_State *L)
     solua_set_int(L, mod, "KEY_DELETE", SOLAR_OS_KEY_DELETE);
     solua_set_int(L, mod, "KEY_ESCAPE", SOLAR_OS_KEY_ESCAPE);
     solua_set_int(L, mod, "KEY_CTRL", SOLAR_OS_KEY_CTRL);
+    solua_set_int(L, mod, "KEY_AUDIO_MUTE_TOGGLE", SOLAR_OS_KEY_AUDIO_MUTE_TOGGLE);
     solua_set_int(L, mod, "KEY_PAGE_UP", SOLAR_OS_KEY_PAGE_UP);
     solua_set_int(L, mod, "KEY_PAGE_DOWN", SOLAR_OS_KEY_PAGE_DOWN);
     solua_set_func(L, mod, "begin", solua_gfx_begin);

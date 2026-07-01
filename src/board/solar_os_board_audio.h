@@ -37,4 +37,3 @@ esp_err_t solar_os_board_audio_set_mic_gain(float gain_db);
 esp_err_t solar_os_board_audio_write(const void *data, size_t len);
 esp_err_t solar_os_board_audio_read(void *data, size_t len);
 void solar_os_board_audio_get_status(solar_os_board_audio_status_t *status);
-

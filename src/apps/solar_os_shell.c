@@ -19,6 +19,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "solar_os_app_registry.h"
+#include "solar_os_board_caps.h"
+#include "solar_os_gpio.h"
 #include "solar_os_identity.h"
 #include "solar_os_job_registry.h"
 #include "solar_os_keys.h"
@@ -29,6 +31,7 @@
 #include "solar_os_sessions.h"
 #include "solar_os_storage.h"
 #include "solar_os_stream.h"
+#include "solar_os_spi.h"
 #include "solar_os_terminal.h"
 
 #define SHELL_INPUT_MAX 192
@@ -67,6 +70,8 @@ typedef struct {
     bool complete_jobs;
     bool complete_ports;
     bool complete_ramfs_mounts;
+    bool complete_gpio_pins;
+    bool complete_spi_cs;
     bool complete_streams;
     bool scalar_streams_only;
     bool complete_path;
@@ -149,31 +154,67 @@ static const shell_command_t shell_builtin_commands[] = {
     {"port", "show byte-stream ports", solar_os_shell_cmd_port},
     {"xfer", "transfer files over byte-stream ports", solar_os_shell_cmd_xfer},
     {"df", "show filesystem free space", solar_os_shell_cmd_df},
+#if SOLAR_OS_PACKAGE_SERVICE_SD
     {"sd", "SD card control", solar_os_shell_cmd_sd},
+#endif
     {"top", "show task resource usage", solar_os_shell_cmd_top},
+#if SOLAR_OS_PACKAGE_SERVICE_BATTERY
     {"battery", "battery status and config", solar_os_shell_cmd_battery},
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_ADC
     {"adc", "read expansion analog inputs", solar_os_shell_cmd_adc},
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_ADC_DPAD
+    {"dpad", "ADC D-pad tools", solar_os_shell_cmd_dpad},
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_JOYSTICK
+    {"joystick", "analog joystick tools", solar_os_shell_cmd_joystick},
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_BLE
     {"ble", "BLE keyboard control", solar_os_shell_cmd_ble},
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_WIFI
     {"wifi", "Wi-Fi station control", solar_os_shell_cmd_wifi},
+#endif
 #if SOLAR_OS_PACKAGE_NET
     {"mqtt", "MQTT client", solar_os_shell_cmd_mqtt},
     {"ping", "send ICMP echo requests", solar_os_shell_cmd_ping},
     {"netscan", "scan TCP ports", solar_os_shell_cmd_netscan},
 #endif
+#if SOLAR_OS_PACKAGE_SERVICE_AUDIO
     {"audio", "audio codec tools", solar_os_shell_cmd_audio},
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_UART
     {"uart", "UART port tools", solar_os_shell_cmd_uart},
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_I2C
     {"i2c", "I2C bus tools", solar_os_shell_cmd_i2c},
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_SPI
+    {"spi", "SPI bus tools", solar_os_shell_cmd_spi},
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_GPIO && SOLAR_OS_BOARD_HAS_STATUS_LED
+    {"led", "status LED control", solar_os_shell_cmd_led},
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_GPIO
     {"gpio", "expansion GPIO tools", solar_os_shell_cmd_gpio},
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_PWM
     {"pwm", "expansion PWM output", solar_os_shell_cmd_pwm},
+#endif
     {"date", "read or set local date", solar_os_shell_cmd_date},
     {"time", "read or set local time", solar_os_shell_cmd_time},
+#if SOLAR_OS_PACKAGE_NET
     {"ntp", "sync RTC from network time", solar_os_shell_cmd_ntp},
+#endif
     {"ota", "OTA update control", solar_os_shell_cmd_ota},
 #if SOLAR_OS_PACKAGE_NET
     {"sshkey", "manage SSH keys", solar_os_shell_cmd_sshkey},
 #endif
+#if SOLAR_OS_PACKAGE_SERVICE_SENSORS
     {"temperature", "read SHTC3 temperature", solar_os_shell_cmd_temperature},
     {"humidity", "read SHTC3 humidity", solar_os_shell_cmd_humidity},
+#endif
     {"cd", "change directory", solar_os_shell_cmd_cd},
     {"ls", "list SD card files", solar_os_shell_cmd_ls},
     {"cat", "print a small text file", solar_os_shell_cmd_cat},
@@ -194,6 +235,8 @@ static const char * const setterm_subcommands[] = {
     "orientation",
     "font",
     "textsize",
+    "brightness",
+    "backlight",
     "keyboard",
     "keymap",
     "keyrate",
@@ -207,6 +250,7 @@ static const char * const setterm_subcommands[] = {
 static const char * const setterm_orientation_values[] = {"0", "90", "180", "270"};
 static const char * const setterm_font_values[] = {"mono", "compact"};
 static const char * const setterm_textsize_values[] = {"12", "14", "16", "18", "20"};
+static const char * const setterm_brightness_values[] = {"0", "25", "50", "75", "100"};
 static const char * const setterm_keyboard_values[] = {"us", "de"};
 static const char * const setterm_keyrate_values[] = {"off"};
 static const char * const setterm_timezone_values[] = {"UTC", "Europe/Berlin"};
@@ -314,6 +358,17 @@ static const char * const i2c_subcommands[] = {
     "write",
 };
 
+static const char * const spi_subcommands[] = {
+    "status",
+    "xfer",
+    "read",
+    "write",
+};
+
+static const char * const spi_mode_values[] = {"0", "1", "2", "3"};
+static const char * const spi_speed_values[] = {"100k", "1m", "4m", "10m", "20m"};
+static const char * const spi_fill_values[] = {"0xff", "0x00"};
+
 static const char * const uart_subcommands[] = {
     "status",
     "baud",
@@ -368,7 +423,13 @@ static const char * const gpio_subcommands[] = {
     "write",
 };
 
-static const char * const expansion_gpio_values[] = {"1", "2", "3", "17"};
+static const char * const led_subcommands[] = {
+    "status",
+    "on",
+    "off",
+    "toggle",
+};
+
 static const char * const gpio_mode_values[] = {"in", "out"};
 static const char * const gpio_pull_values[] = {"none", "up", "down"};
 static const char * const bit_values[] = {"0", "1"};
@@ -376,6 +437,25 @@ static const char * const bit_values[] = {"0", "1"};
 static const char * const adc_subcommands[] = {
     "status",
     "read",
+};
+
+static const char * const dpad_subcommands[] = {
+    "status",
+    "calibrate",
+};
+
+static const char * const dpad_calibrate_subcommands[] = {
+    "idle",
+    "reset",
+};
+
+static const char * const joystick_subcommands[] = {
+    "status",
+    "calibrate",
+};
+
+static const char * const joystick_calibrate_subcommands[] = {
+    "reset",
 };
 
 static const char * const pwm_subcommands[] = {
@@ -491,6 +571,8 @@ static const char * const path_setterm[] = {"setterm"};
 static const char * const path_setterm_orientation[] = {"setterm", "orientation"};
 static const char * const path_setterm_font[] = {"setterm", "font"};
 static const char * const path_setterm_textsize[] = {"setterm", "textsize"};
+static const char * const path_setterm_brightness[] = {"setterm", "brightness"};
+static const char * const path_setterm_backlight[] = {"setterm", "backlight"};
 static const char * const path_setterm_keyboard[] = {"setterm", "keyboard"};
 static const char * const path_setterm_keymap[] = {"setterm", "keymap"};
 static const char * const path_setterm_keyrate[] = {"setterm", "keyrate"};
@@ -572,6 +654,39 @@ static const char * const path_ramfs[] = {"ramfs"};
 static const char * const path_ramfs_mount_path[] = {"ramfs", "mount", SHELL_COMPLETION_ANY};
 static const char * const path_ramfs_unmount[] = {"ramfs", "unmount"};
 static const char * const path_i2c[] = {"i2c"};
+static const char * const path_spi[] = {"spi"};
+static const char * const path_spi_xfer[] = {"spi", "xfer"};
+static const char * const path_spi_xfer_cs[] = {"spi", "xfer", SHELL_COMPLETION_ANY};
+static const char * const path_spi_xfer_mode[] = {
+    "spi",
+    "xfer",
+    SHELL_COMPLETION_ANY,
+    SHELL_COMPLETION_ANY,
+};
+static const char * const path_spi_read[] = {"spi", "read"};
+static const char * const path_spi_read_cs[] = {"spi", "read", SHELL_COMPLETION_ANY};
+static const char * const path_spi_read_mode[] = {
+    "spi",
+    "read",
+    SHELL_COMPLETION_ANY,
+    SHELL_COMPLETION_ANY,
+};
+static const char * const path_spi_read_len[] = {
+    "spi",
+    "read",
+    SHELL_COMPLETION_ANY,
+    SHELL_COMPLETION_ANY,
+    SHELL_COMPLETION_ANY,
+    SHELL_COMPLETION_ANY,
+};
+static const char * const path_spi_write[] = {"spi", "write"};
+static const char * const path_spi_write_cs[] = {"spi", "write", SHELL_COMPLETION_ANY};
+static const char * const path_spi_write_mode[] = {
+    "spi",
+    "write",
+    SHELL_COMPLETION_ANY,
+    SHELL_COMPLETION_ANY,
+};
 static const char * const path_uart[] = {"uart"};
 static const char * const path_uart_mode[] = {"uart", "mode"};
 static const char * const path_port[] = {"port"};
@@ -612,6 +727,7 @@ static const char * const path_log_follow[] = {"log", "follow"};
 static const char * const path_log_level[] = {"log", "level"};
 static const char * const path_log_sink[] = {"log", "sink"};
 static const char * const path_log_sink_cdc[] = {"log", "sink", "cdc"};
+static const char * const path_led[] = {"led"};
 static const char * const path_gpio[] = {"gpio"};
 static const char * const path_gpio_mode[] = {"gpio", "mode"};
 static const char * const path_gpio_mode_pin[] = {"gpio", "mode", SHELL_COMPLETION_ANY};
@@ -626,6 +742,10 @@ static const char * const path_gpio_write[] = {"gpio", "write"};
 static const char * const path_gpio_write_pin[] = {"gpio", "write", SHELL_COMPLETION_ANY};
 static const char * const path_adc[] = {"adc"};
 static const char * const path_adc_read[] = {"adc", "read"};
+static const char * const path_dpad[] = {"dpad"};
+static const char * const path_dpad_calibrate[] = {"dpad", "calibrate"};
+static const char * const path_joystick[] = {"joystick"};
+static const char * const path_joystick_calibrate[] = {"joystick", "calibrate"};
 static const char * const path_pwm[] = {"pwm"};
 static const char * const path_pwm_set[] = {"pwm", "set"};
 static const char * const path_pwm_off[] = {"pwm", "off"};
@@ -683,6 +803,18 @@ static const char * const path_ota_flavor[] = {"ota", "flavor"};
         .path_count = SHELL_ARRAY_COUNT(path_array), \
         .complete_ramfs_mounts = true, \
     }
+#define SHELL_COMPLETION_GPIO_PINS(path_array) \
+    { \
+        .path = path_array, \
+        .path_count = SHELL_ARRAY_COUNT(path_array), \
+        .complete_gpio_pins = true, \
+    }
+#define SHELL_COMPLETION_SPI_CS(path_array) \
+    { \
+        .path = path_array, \
+        .path_count = SHELL_ARRAY_COUNT(path_array), \
+        .complete_spi_cs = true, \
+    }
 #define SHELL_COMPLETION_STREAMS(path_array) \
     { \
         .path = path_array, \
@@ -733,6 +865,8 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_STATIC(path_setterm_orientation, setterm_orientation_values),
     SHELL_COMPLETION_STATIC(path_setterm_font, setterm_font_values),
     SHELL_COMPLETION_STATIC(path_setterm_textsize, setterm_textsize_values),
+    SHELL_COMPLETION_STATIC(path_setterm_brightness, setterm_brightness_values),
+    SHELL_COMPLETION_STATIC(path_setterm_backlight, setterm_brightness_values),
     SHELL_COMPLETION_STATIC(path_setterm_keyboard, setterm_keyboard_values),
     SHELL_COMPLETION_STATIC(path_setterm_keymap, setterm_keyboard_values),
     SHELL_COMPLETION_STATIC(path_setterm_keyrate, setterm_keyrate_values),
@@ -791,6 +925,17 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_STATIC(path_ramfs_mount_path, ramfs_size_values),
     SHELL_COMPLETION_RAMFS_MOUNTS(path_ramfs_unmount),
     SHELL_COMPLETION_STATIC(path_i2c, i2c_subcommands),
+    SHELL_COMPLETION_STATIC(path_spi, spi_subcommands),
+    SHELL_COMPLETION_SPI_CS(path_spi_xfer),
+    SHELL_COMPLETION_STATIC(path_spi_xfer_cs, spi_mode_values),
+    SHELL_COMPLETION_STATIC(path_spi_xfer_mode, spi_speed_values),
+    SHELL_COMPLETION_SPI_CS(path_spi_read),
+    SHELL_COMPLETION_STATIC(path_spi_read_cs, spi_mode_values),
+    SHELL_COMPLETION_STATIC(path_spi_read_mode, spi_speed_values),
+    SHELL_COMPLETION_STATIC(path_spi_read_len, spi_fill_values),
+    SHELL_COMPLETION_SPI_CS(path_spi_write),
+    SHELL_COMPLETION_STATIC(path_spi_write_cs, spi_mode_values),
+    SHELL_COMPLETION_STATIC(path_spi_write_mode, spi_speed_values),
     SHELL_COMPLETION_STATIC(path_uart, uart_subcommands),
     SHELL_COMPLETION_STATIC(path_uart_mode, uart_mode_values),
     SHELL_COMPLETION_STATIC(path_port, port_subcommands),
@@ -809,18 +954,25 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_STATIC(path_log_level, log_level_values),
     SHELL_COMPLETION_STATIC(path_log_sink, log_sink_values),
     SHELL_COMPLETION_STATIC(path_log_sink_cdc, on_off_values),
+#if SOLAR_OS_PACKAGE_SERVICE_GPIO && SOLAR_OS_BOARD_HAS_STATUS_LED
+    SHELL_COMPLETION_STATIC(path_led, led_subcommands),
+#endif
     SHELL_COMPLETION_STATIC(path_gpio, gpio_subcommands),
-    SHELL_COMPLETION_STATIC(path_gpio_mode, expansion_gpio_values),
+    SHELL_COMPLETION_GPIO_PINS(path_gpio_mode),
     SHELL_COMPLETION_STATIC(path_gpio_mode_pin, gpio_mode_values),
     SHELL_COMPLETION_STATIC(path_gpio_mode_pin_mode, gpio_pull_values),
-    SHELL_COMPLETION_STATIC(path_gpio_read, expansion_gpio_values),
-    SHELL_COMPLETION_STATIC(path_gpio_write, expansion_gpio_values),
+    SHELL_COMPLETION_GPIO_PINS(path_gpio_read),
+    SHELL_COMPLETION_GPIO_PINS(path_gpio_write),
     SHELL_COMPLETION_STATIC(path_gpio_write_pin, bit_values),
     SHELL_COMPLETION_STATIC(path_adc, adc_subcommands),
-    SHELL_COMPLETION_STATIC(path_adc_read, expansion_gpio_values),
+    SHELL_COMPLETION_GPIO_PINS(path_adc_read),
+    SHELL_COMPLETION_STATIC(path_dpad, dpad_subcommands),
+    SHELL_COMPLETION_STATIC(path_dpad_calibrate, dpad_calibrate_subcommands),
+    SHELL_COMPLETION_STATIC(path_joystick, joystick_subcommands),
+    SHELL_COMPLETION_STATIC(path_joystick_calibrate, joystick_calibrate_subcommands),
     SHELL_COMPLETION_STATIC(path_pwm, pwm_subcommands),
-    SHELL_COMPLETION_STATIC(path_pwm_set, expansion_gpio_values),
-    SHELL_COMPLETION_STATIC(path_pwm_off, expansion_gpio_values),
+    SHELL_COMPLETION_GPIO_PINS(path_pwm_set),
+    SHELL_COMPLETION_GPIO_PINS(path_pwm_off),
     SHELL_COMPLETION_STATIC(path_power, power_subcommands),
     SHELL_COMPLETION_STATIC(path_power_profile, power_profile_values),
     SHELL_COMPLETION_STATIC(path_power_idle, power_idle_values),
@@ -840,6 +992,7 @@ static const shell_completion_rule_t shell_completion_rules[] = {
 #undef SHELL_COMPLETION_PATH
 #undef SHELL_COMPLETION_PORTS
 #undef SHELL_COMPLETION_STREAMS
+#undef SHELL_COMPLETION_SPI_CS
 #undef SHELL_COMPLETION_JOBS
 #undef SHELL_COMPLETION_COMMANDS
 #undef SHELL_COMPLETION_OPTIONS
@@ -2606,6 +2759,43 @@ static void shell_completion_emit_ramfs_mounts(shell_completion_match_t *state)
     }
 }
 
+static void shell_completion_emit_gpio_pins(shell_completion_match_t *state)
+{
+#if SOLAR_OS_PACKAGE_SERVICE_GPIO
+    char value[8];
+
+    for (size_t i = 0; i < solar_os_gpio_pin_count(); i++) {
+        solar_os_gpio_pin_info_t info;
+        if (!solar_os_gpio_get_pin_info(i, &info) || !info.runtime_allowed) {
+            continue;
+        }
+        snprintf(value, sizeof(value), "%d", info.pin);
+        shell_completion_emit(state, value);
+    }
+#else
+    (void)state;
+#endif
+}
+
+static void shell_completion_emit_spi_cs(shell_completion_match_t *state)
+{
+#if SOLAR_OS_PACKAGE_SERVICE_SPI
+    solar_os_spi_status_t status;
+    if (solar_os_spi_get_status(&status) != ESP_OK || !status.available) {
+        return;
+    }
+
+    for (size_t i = 0; i < status.cs_count; i++) {
+        char pin[8];
+        shell_completion_emit(state, status.cs[i].name);
+        snprintf(pin, sizeof(pin), "%d", status.cs[i].pin);
+        shell_completion_emit(state, pin);
+    }
+#else
+    (void)state;
+#endif
+}
+
 static void shell_completion_emit_streams(shell_completion_match_t *state, bool scalar_only)
 {
     const size_t count = solar_os_stream_count();
@@ -2999,6 +3189,12 @@ static bool shell_completion_collect_matches(solar_os_context_t *ctx,
         }
         if (rule->complete_ramfs_mounts) {
             shell_completion_emit_ramfs_mounts(state);
+        }
+        if (rule->complete_gpio_pins) {
+            shell_completion_emit_gpio_pins(state);
+        }
+        if (rule->complete_spi_cs) {
+            shell_completion_emit_spi_cs(state);
         }
         if (rule->complete_streams) {
             shell_completion_emit_streams(state, rule->scalar_streams_only);

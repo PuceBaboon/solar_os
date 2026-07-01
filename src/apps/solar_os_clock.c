@@ -10,7 +10,10 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_timer.h"
+#include "solar_os_config.h"
+#if SOLAR_OS_PACKAGE_SERVICE_AUDIO
 #include "solar_os_audio.h"
+#endif
 #include "solar_os_ble_keyboard.h"
 #include "solar_os_gfx.h"
 #include "solar_os_log.h"
@@ -43,13 +46,6 @@ typedef struct {
 
 static const char *TAG = "solar_os_clock";
 static clock_state_t clock_state;
-
-static uint8_t clock_sound_volume(void)
-{
-    solar_os_audio_status_t status;
-    solar_os_audio_get_status(&status);
-    return status.volume;
-}
 
 static uint32_t clock_now_ms(void)
 {
@@ -517,6 +513,7 @@ static bool clock_parse_args(solar_os_context_t *ctx)
     return false;
 }
 
+#if SOLAR_OS_PACKAGE_SERVICE_AUDIO
 static void clock_alarm_sound_task(void *arg)
 {
     (void)arg;
@@ -527,7 +524,9 @@ static void clock_alarm_sound_task(void *arg)
     while (!clock_state.alarm_sound_stop_requested) {
         if (sound_available) {
             for (int i = 0; i < 4 && !clock_state.alarm_sound_stop_requested; i++) {
-                const esp_err_t err = solar_os_audio_play_tone(1200, 70, clock_sound_volume());
+                const esp_err_t err = solar_os_audio_play_tone(1200,
+                                                               70,
+                                                               SOLAR_OS_AUDIO_VOLUME_GLOBAL);
                 if (err != ESP_OK) {
                     sound_available = false;
                     SOLAR_OS_LOGW(TAG, "alarm sound unavailable: %s", esp_err_to_name(err));
@@ -573,6 +572,16 @@ static void clock_alarm_sound_stop(void)
         vTaskDelay(pdMS_TO_TICKS(25));
     }
 }
+#else
+static void clock_alarm_sound_start(void)
+{
+}
+
+static void clock_alarm_sound_stop(void)
+{
+    clock_state.alarm_sound_stop_requested = true;
+}
+#endif
 
 static esp_err_t clock_start(solar_os_context_t *ctx)
 {

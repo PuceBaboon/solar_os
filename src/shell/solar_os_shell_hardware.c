@@ -14,6 +14,7 @@
 
 #include "esp_err.h"
 #include "solar_os_adc.h"
+#include "solar_os_adc_dpad.h"
 #include "solar_os_audio.h"
 #include "solar_os_battery.h"
 #include "solar_os_ble_keyboard.h"
@@ -21,8 +22,11 @@
 #include "solar_os_config.h"
 #include "solar_os_gpio.h"
 #include "solar_os_i2c.h"
+#include "solar_os_joystick.h"
 #include "solar_os_pwm.h"
 #include "solar_os_sensors.h"
+#include "solar_os_spi.h"
+#include "solar_os_status_led.h"
 #include "solar_os_storage.h"
 #include "solar_os_terminal.h"
 #include "solar_os_time.h"
@@ -30,6 +34,7 @@
 
 #define SOLAR_OS_SHELL_ARG_MAX 20
 #define I2C_READ_MAX_LEN 32
+#define SPI_TRANSFER_MAX_LEN 64
 #define UART_READ_MAX_LEN 96
 #define UART_WRITE_MAX_LEN 128
 
@@ -171,6 +176,7 @@ static void format_bytes(uint64_t bytes, char *buffer, size_t buffer_len)
              units[unit_index]);
 }
 
+#if SOLAR_OS_PACKAGE_SERVICE_SD
 static void sd_print_status(solar_os_shell_io_t *term)
 {
     char status[64];
@@ -288,7 +294,9 @@ void solar_os_shell_cmd_sd(solar_os_context_t *ctx, int argc, char **argv)
 
     sd_print_usage(term);
 }
+#endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_BATTERY
 static void battery_print_usage(solar_os_shell_io_t *term)
 {
     solar_os_shell_io_writeln(term, "usage:");
@@ -626,7 +634,9 @@ void solar_os_shell_cmd_battery(solar_os_context_t *ctx, int argc, char **argv)
 
     battery_print_usage(term);
 }
+#endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_BLE
 static void ble_format_bda(const uint8_t *bda, char *buffer, size_t buffer_len)
 {
     if (buffer == NULL || buffer_len == 0) {
@@ -1234,8 +1244,10 @@ void solar_os_shell_cmd_ble(solar_os_context_t *ctx, int argc, char **argv)
 
     solar_os_shell_io_writeln(term, "usage: ble [status|scan|pair|cancel|forget|gatt]");
 }
+#endif
 
 
+#if SOLAR_OS_PACKAGE_SERVICE_AUDIO
 static void audio_print_gain(solar_os_shell_io_t *term, float gain_db)
 {
     int tenths = (int)((gain_db * 10.0f) + (gain_db >= 0.0f ? 0.5f : -0.5f));
@@ -1295,15 +1307,22 @@ static void audio_print_status(solar_os_shell_io_t *term)
     solar_os_shell_io_write(term, "Mic gain: ");
     audio_print_gain(term, status.mic_gain_db);
     solar_os_shell_io_put_char(term, '\n');
-    solar_os_shell_io_printf(term,
-                             "I2S: port %d mclk %d bclk %d ws %d din %d dout %d\n",
-                             status.i2s_port,
-                             status.mclk_pin,
-                             status.bclk_pin,
-                             status.ws_pin,
-                             status.din_pin,
-                             status.dout_pin);
-    solar_os_shell_io_printf(term, "PA pin: %d\n", status.pa_pin);
+    if (status.i2s_port >= 0) {
+        solar_os_shell_io_printf(term,
+                                 "I2S: port %d mclk %d bclk %d ws %d din %d dout %d\n",
+                                 status.i2s_port,
+                                 status.mclk_pin,
+                                 status.bclk_pin,
+                                 status.ws_pin,
+                                 status.din_pin,
+                                 status.dout_pin);
+        solar_os_shell_io_printf(term, "PA pin: %d\n", status.pa_pin);
+    } else if (status.dout_pin >= 0 || status.din_pin >= 0) {
+        solar_os_shell_io_printf(term,
+                                 "DAC: pos %d neg %d\n",
+                                 status.dout_pin,
+                                 status.din_pin);
+    }
 }
 
 static void audio_print_usage(solar_os_shell_io_t *term)
@@ -1321,13 +1340,13 @@ static void audio_cmd_tone(solar_os_shell_io_t *term, int argc, char **argv)
 {
     uint32_t frequency_hz = 880;
     uint32_t duration_ms = 500;
-    uint8_t volume = 50;
+    uint8_t volume = SOLAR_OS_AUDIO_VOLUME_GLOBAL;
 
     if (argc > 5 ||
         (argc >= 3 && !audio_parse_frequency(argv[2], &frequency_hz)) ||
         (argc >= 4 && !audio_parse_duration(argv[3], &duration_ms)) ||
         (argc >= 5 && !parse_u8(argv[4], &volume)) ||
-        volume > 100) {
+        (argc >= 5 && volume > 100)) {
         solar_os_shell_io_writeln(term, "usage: audio tone [hz] [ms] [volume]");
         solar_os_shell_io_printf(term,
                                  "hz: %u..%u, ms: 1..%u, volume: 0..100\n",
@@ -1337,11 +1356,18 @@ static void audio_cmd_tone(solar_os_shell_io_t *term, int argc, char **argv)
         return;
     }
 
-    solar_os_shell_io_printf(term,
-                             "tone: %" PRIu32 " Hz %" PRIu32 " ms volume %u\n",
-                             frequency_hz,
-                             duration_ms,
-                             (unsigned)volume);
+    if (volume == SOLAR_OS_AUDIO_VOLUME_GLOBAL) {
+        solar_os_shell_io_printf(term,
+                                 "tone: %" PRIu32 " Hz %" PRIu32 " ms volume global\n",
+                                 frequency_hz,
+                                 duration_ms);
+    } else {
+        solar_os_shell_io_printf(term,
+                                 "tone: %" PRIu32 " Hz %" PRIu32 " ms volume %u\n",
+                                 frequency_hz,
+                                 duration_ms,
+                                 (unsigned)volume);
+    }
     solar_os_shell_io_flush(term);
 
     const esp_err_t err = solar_os_audio_play_tone(frequency_hz, duration_ms, volume);
@@ -1481,13 +1507,23 @@ void solar_os_shell_cmd_audio(solar_os_context_t *ctx, int argc, char **argv)
             solar_os_shell_io_writeln(term, "usage: audio off");
             return;
         }
+        const esp_err_t err = solar_os_audio_set_volume(0);
+        if (err != ESP_OK) {
+            if (shell_print_not_supported(term, "audio", "audio hardware", err)) {
+                return;
+            }
+            solar_os_shell_io_printf(term, "audio off failed: %s\n", esp_err_to_name(err));
+            return;
+        }
         solar_os_audio_deinit();
         solar_os_shell_io_writeln(term, "audio: off");
     } else {
         audio_print_usage(term);
     }
 }
+#endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_UART
 static void uart_print_status(solar_os_shell_io_t *term)
 {
     solar_os_uart_status_t status;
@@ -1749,7 +1785,86 @@ void solar_os_shell_cmd_uart(solar_os_context_t *ctx, int argc, char **argv)
         uart_print_usage(term);
     }
 }
+#endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_GPIO && SOLAR_OS_BOARD_HAS_STATUS_LED
+static void led_print_usage(solar_os_shell_io_t *term)
+{
+    solar_os_shell_io_writeln(term, "usage:");
+    solar_os_shell_io_writeln(term, "  led status");
+    solar_os_shell_io_writeln(term, "  led on");
+    solar_os_shell_io_writeln(term, "  led off");
+    solar_os_shell_io_writeln(term, "  led toggle");
+}
+
+static void led_print_error(solar_os_shell_io_t *term, const char *action, esp_err_t err)
+{
+    if (err == ESP_ERR_NOT_SUPPORTED) {
+        solar_os_shell_io_writeln(term, "led: status LED not available on this board");
+        return;
+    }
+    solar_os_shell_io_printf(term, "led %s failed: %s\n", action, esp_err_to_name(err));
+}
+
+static void led_print_status(solar_os_shell_io_t *term)
+{
+    bool on = false;
+    const esp_err_t err = solar_os_status_led_get(&on);
+    if (err != ESP_OK) {
+        led_print_error(term, "status", err);
+        return;
+    }
+    solar_os_shell_io_printf(term, "led: %s\n", on ? "on" : "off");
+}
+
+void solar_os_shell_cmd_led(solar_os_context_t *ctx, int argc, char **argv)
+{
+    solar_os_shell_io_t *term = terminal(ctx);
+
+    if (argc == 1 || strcmp(argv[1], "status") == 0) {
+        if (argc > 2) {
+            solar_os_shell_io_writeln(term, "usage: led status");
+            return;
+        }
+        led_print_status(term);
+        return;
+    }
+
+    if (strcmp(argv[1], "on") == 0 || strcmp(argv[1], "off") == 0) {
+        if (argc != 2) {
+            solar_os_shell_io_printf(term, "usage: led %s\n", argv[1]);
+            return;
+        }
+        const bool on = strcmp(argv[1], "on") == 0;
+        const esp_err_t err = solar_os_status_led_set(on);
+        if (err != ESP_OK) {
+            led_print_error(term, argv[1], err);
+            return;
+        }
+        solar_os_shell_io_printf(term, "led: %s\n", on ? "on" : "off");
+        return;
+    }
+
+    if (strcmp(argv[1], "toggle") == 0) {
+        if (argc != 2) {
+            solar_os_shell_io_writeln(term, "usage: led toggle");
+            return;
+        }
+        bool on = false;
+        const esp_err_t err = solar_os_status_led_toggle(&on);
+        if (err != ESP_OK) {
+            led_print_error(term, "toggle", err);
+            return;
+        }
+        solar_os_shell_io_printf(term, "led: %s\n", on ? "on" : "off");
+        return;
+    }
+
+    led_print_usage(term);
+}
+#endif
+
+#if SOLAR_OS_PACKAGE_SERVICE_GPIO
 static void gpio_print_usage(solar_os_shell_io_t *term)
 {
     solar_os_shell_io_writeln(term, "usage:");
@@ -1905,7 +2020,249 @@ void solar_os_shell_cmd_gpio(solar_os_context_t *ctx, int argc, char **argv)
         gpio_print_usage(term);
     }
 }
+#endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_ADC_DPAD
+static const char *dpad_zone_name(solar_os_adc_dpad_zone_t zone)
+{
+    switch (zone) {
+    case SOLAR_OS_ADC_DPAD_ZONE_IDLE:
+        return "idle";
+    case SOLAR_OS_ADC_DPAD_ZONE_MID:
+        return "mid";
+    case SOLAR_OS_ADC_DPAD_ZONE_HIGH:
+        return "high";
+    default:
+        return "?";
+    }
+}
+
+static void dpad_print_usage(solar_os_shell_io_t *term)
+{
+    solar_os_shell_io_writeln(term, "usage:");
+    solar_os_shell_io_writeln(term, "  dpad [status]");
+    solar_os_shell_io_writeln(term, "  dpad calibrate [idle]");
+    solar_os_shell_io_writeln(term, "  dpad calibrate reset");
+}
+
+static void dpad_print_status(solar_os_shell_io_t *term)
+{
+    if (!solar_os_board_has(SOLAR_OS_BOARD_CAP_ADC_DPAD)) {
+        solar_os_shell_io_writeln(term, "dpad: not available on this board");
+        return;
+    }
+
+    const size_t count = solar_os_adc_dpad_axis_count();
+    solar_os_shell_io_printf(term, "dpad: %u ADC %s\n", (unsigned)count, count == 1 ? "axis" : "axes");
+    solar_os_shell_io_writeln(term, "AXIS PIN RAW  ZONE  IDLE<= MID       HIGH>=");
+    for (size_t i = 0; i < count; i++) {
+        solar_os_adc_dpad_axis_status_t status;
+        if (!solar_os_adc_dpad_get_axis_status(i, &status)) {
+            continue;
+        }
+
+        if (!status.initialized) {
+            solar_os_shell_io_printf(term,
+                                     "%-4s %-3d -    -     -      -         -\n",
+                                     status.name != NULL ? status.name : "?",
+                                     (int)status.pin);
+            continue;
+        }
+
+        if (status.read_error != ESP_OK && !status.raw_valid) {
+            solar_os_shell_io_printf(term,
+                                     "%-4s %-3d err  %-5s %-6u %4u-%-4u %-6u %s\n",
+                                     status.name != NULL ? status.name : "?",
+                                     (int)status.pin,
+                                     dpad_zone_name(status.zone),
+                                     (unsigned)status.idle_max,
+                                     (unsigned)status.mid_min,
+                                     (unsigned)status.mid_max,
+                                     (unsigned)status.high_min,
+                                     esp_err_to_name(status.read_error));
+            continue;
+        }
+
+        solar_os_shell_io_printf(term,
+                                 "%-4s %-3d %-4d %-5s %-6u %4u-%-4u %-6u\n",
+                                 status.name != NULL ? status.name : "?",
+                                 (int)status.pin,
+                                 status.raw,
+                                 dpad_zone_name(status.zone),
+                                 (unsigned)status.idle_max,
+                                 (unsigned)status.mid_min,
+                                 (unsigned)status.mid_max,
+                                 (unsigned)status.high_min);
+    }
+}
+
+void solar_os_shell_cmd_dpad(solar_os_context_t *ctx, int argc, char **argv)
+{
+    solar_os_shell_io_t *term = terminal(ctx);
+
+    if (argc == 1 || strcmp(argv[1], "status") == 0) {
+        if (argc > 2) {
+            solar_os_shell_io_writeln(term, "usage: dpad status");
+            return;
+        }
+        dpad_print_status(term);
+        return;
+    }
+
+    if (strcmp(argv[1], "calibrate") == 0) {
+        if (argc > 3) {
+            dpad_print_usage(term);
+            return;
+        }
+
+        esp_err_t err;
+        if (argc == 3 && strcmp(argv[2], "reset") == 0) {
+            err = solar_os_adc_dpad_calibrate_reset();
+        } else if (argc == 2 || (argc == 3 && strcmp(argv[2], "idle") == 0)) {
+            err = solar_os_adc_dpad_calibrate_idle();
+        } else {
+            dpad_print_usage(term);
+            return;
+        }
+
+        if (err == ESP_OK) {
+            solar_os_shell_io_writeln(term,
+                                      argc == 3 && strcmp(argv[2], "reset") == 0 ?
+                                          "dpad calibration reset" :
+                                          "dpad idle calibrated");
+            dpad_print_status(term);
+        } else if (shell_print_not_supported(term, "dpad", "ADC D-pad", err)) {
+            return;
+        } else if (err == ESP_ERR_INVALID_STATE) {
+            solar_os_shell_io_writeln(term, "dpad: not initialized");
+        } else {
+            solar_os_shell_io_printf(term, "dpad calibrate failed: %s\n", esp_err_to_name(err));
+        }
+        return;
+    }
+
+    dpad_print_usage(term);
+}
+#endif
+
+#if SOLAR_OS_PACKAGE_SERVICE_JOYSTICK
+static const char *joystick_direction_name(int direction)
+{
+    if (direction < 0) {
+        return "low";
+    }
+    if (direction > 0) {
+        return "high";
+    }
+    return "center";
+}
+
+static void joystick_print_usage(solar_os_shell_io_t *term)
+{
+    solar_os_shell_io_writeln(term, "usage:");
+    solar_os_shell_io_writeln(term, "  joystick [status]");
+    solar_os_shell_io_writeln(term, "  joystick calibrate");
+    solar_os_shell_io_writeln(term, "  joystick calibrate reset");
+}
+
+static void joystick_print_status(solar_os_shell_io_t *term)
+{
+    if (!solar_os_board_has(SOLAR_OS_BOARD_CAP_JOYSTICK)) {
+        solar_os_shell_io_writeln(term, "joystick: not available on this board");
+        return;
+    }
+
+    const size_t count = solar_os_joystick_axis_count();
+    solar_os_shell_io_printf(term, "joystick: %u %s\n", (unsigned)count, count == 1 ? "axis" : "axes");
+    solar_os_shell_io_writeln(term, "AXIS PIN RAW  DIR    LOW-P LOW-R HIGH-R HIGH-P");
+    for (size_t i = 0; i < count; i++) {
+        solar_os_joystick_axis_status_t status;
+        if (!solar_os_joystick_get_axis_status(i, &status)) {
+            continue;
+        }
+
+        if (!status.initialized) {
+            solar_os_shell_io_printf(term,
+                                     "%-4s %-3d -    -      -     -     -      -\n",
+                                     status.name != NULL ? status.name : "?",
+                                     (int)status.pin);
+            continue;
+        }
+
+        if (status.read_error != ESP_OK && !status.raw_valid) {
+            solar_os_shell_io_printf(term,
+                                     "%-4s %-3d err  %-6s %-5u %-5u %-6u %-6u %s\n",
+                                     status.name != NULL ? status.name : "?",
+                                     (int)status.pin,
+                                     joystick_direction_name(status.direction),
+                                     (unsigned)status.low_press,
+                                     (unsigned)status.low_release,
+                                     (unsigned)status.high_release,
+                                     (unsigned)status.high_press,
+                                     esp_err_to_name(status.read_error));
+            continue;
+        }
+
+        solar_os_shell_io_printf(term,
+                                 "%-4s %-3d %-4d %-6s %-5u %-5u %-6u %-6u\n",
+                                 status.name != NULL ? status.name : "?",
+                                 (int)status.pin,
+                                 status.raw,
+                                 joystick_direction_name(status.direction),
+                                 (unsigned)status.low_press,
+                                 (unsigned)status.low_release,
+                                 (unsigned)status.high_release,
+                                 (unsigned)status.high_press);
+    }
+}
+
+void solar_os_shell_cmd_joystick(solar_os_context_t *ctx, int argc, char **argv)
+{
+    solar_os_shell_io_t *term = terminal(ctx);
+
+    if (argc == 1 || strcmp(argv[1], "status") == 0) {
+        if (argc > 2) {
+            solar_os_shell_io_writeln(term, "usage: joystick status");
+            return;
+        }
+        joystick_print_status(term);
+        return;
+    }
+
+    if (strcmp(argv[1], "calibrate") == 0) {
+        if (argc > 3) {
+            joystick_print_usage(term);
+            return;
+        }
+
+        esp_err_t err;
+        if (argc == 3 && strcmp(argv[2], "reset") == 0) {
+            err = solar_os_joystick_calibrate_reset();
+        } else if (argc == 2) {
+            err = solar_os_joystick_calibrate_center();
+        } else {
+            joystick_print_usage(term);
+            return;
+        }
+
+        if (err == ESP_OK) {
+            solar_os_shell_io_writeln(term, argc == 3 ? "joystick calibration reset" : "joystick center calibrated");
+            joystick_print_status(term);
+        } else if (shell_print_not_supported(term, "joystick", "joystick", err)) {
+            return;
+        } else if (err == ESP_ERR_INVALID_STATE) {
+            solar_os_shell_io_writeln(term, "joystick: not initialized");
+        } else {
+            solar_os_shell_io_printf(term, "joystick calibrate failed: %s\n", esp_err_to_name(err));
+        }
+        return;
+    }
+
+    joystick_print_usage(term);
+}
+#endif
+
+#if SOLAR_OS_PACKAGE_SERVICE_ADC
 static void adc_print_usage(solar_os_shell_io_t *term)
 {
     solar_os_shell_io_writeln(term, "usage:");
@@ -2015,7 +2372,9 @@ void solar_os_shell_cmd_adc(solar_os_context_t *ctx, int argc, char **argv)
         adc_print_usage(term);
     }
 }
+#endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_PWM
 static void pwm_print_usage(solar_os_shell_io_t *term)
 {
     solar_os_shell_io_writeln(term, "usage:");
@@ -2144,7 +2503,9 @@ void solar_os_shell_cmd_pwm(solar_os_context_t *ctx, int argc, char **argv)
         pwm_print_usage(term);
     }
 }
+#endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_I2C
 static void i2c_print_status(solar_os_shell_io_t *term)
 {
     if (!solar_os_board_has(SOLAR_OS_BOARD_CAP_I2C)) {
@@ -2314,6 +2675,243 @@ void solar_os_shell_cmd_i2c(solar_os_context_t *ctx, int argc, char **argv)
         i2c_print_usage(term);
     }
 }
+#endif
+
+#if SOLAR_OS_PACKAGE_SERVICE_SPI
+static bool parse_u32_arg(const char *text, uint32_t min, uint32_t max, uint32_t *value)
+{
+    if (text == NULL || text[0] == '\0' || value == NULL) {
+        return false;
+    }
+
+    char *end = NULL;
+    errno = 0;
+    unsigned long parsed = strtoul(text, &end, 0);
+    if (errno != 0 || end == text) {
+        return false;
+    }
+
+    uint32_t multiplier = 1U;
+    if (*end == 'k' || *end == 'K') {
+        multiplier = 1000U;
+        end++;
+    } else if (*end == 'm' || *end == 'M') {
+        multiplier = 1000000U;
+        end++;
+    }
+
+    if (*end != '\0' || parsed > UINT32_MAX / multiplier) {
+        return false;
+    }
+
+    const uint32_t scaled = (uint32_t)parsed * multiplier;
+    if (scaled < min || scaled > max) {
+        return false;
+    }
+
+    *value = scaled;
+    return true;
+}
+
+static void spi_print_status(solar_os_shell_io_t *term)
+{
+    solar_os_spi_status_t status;
+    const esp_err_t err = solar_os_spi_get_status(&status);
+    if (err != ESP_OK || !status.available) {
+        solar_os_shell_io_writeln(term, "SPI: not available on this board");
+        return;
+    }
+
+    solar_os_shell_io_printf(term,
+                             "%s: SCK %d, MISO %d, MOSI %d\n",
+                             status.name != NULL ? status.name : "SPI",
+                             status.sclk_pin,
+                             status.miso_pin,
+                             status.mosi_pin);
+    solar_os_shell_io_printf(term,
+                             "default speed: %" PRIu32 " Hz, max transfer: %u bytes\n",
+                             status.default_speed_hz,
+                             (unsigned)status.max_transfer_size);
+    solar_os_shell_io_write(term, "CS:");
+    if (status.cs_count == 0) {
+        solar_os_shell_io_write(term, " none");
+    }
+    for (size_t i = 0; i < status.cs_count; i++) {
+        solar_os_shell_io_printf(term,
+                                 " %s(GPIO%d)",
+                                 status.cs[i].name,
+                                 status.cs[i].pin);
+    }
+    solar_os_shell_io_put_char(term, '\n');
+}
+
+static void spi_print_usage(solar_os_shell_io_t *term)
+{
+    solar_os_shell_io_writeln(term, "usage:");
+    solar_os_shell_io_writeln(term, "  spi [status]");
+    solar_os_shell_io_writeln(term, "  spi xfer <cs> <mode> <hz> <byte...>");
+    solar_os_shell_io_writeln(term, "  spi read <cs> <mode> <hz> <len> [fill]");
+    solar_os_shell_io_writeln(term, "  spi write <cs> <mode> <hz> <byte...>");
+}
+
+static bool spi_parse_common(solar_os_shell_io_t *term,
+                             int argc,
+                             char **argv,
+                             int min_argc,
+                             int *cs_pin,
+                             uint8_t *mode,
+                             uint32_t *speed_hz)
+{
+    size_t parsed_mode;
+
+    if (argc < min_argc ||
+        solar_os_spi_resolve_cs(argv[2], cs_pin) != ESP_OK ||
+        !parse_size_arg(argv[3], 0, 3, &parsed_mode) ||
+        !parse_u32_arg(argv[4], 1, SOLAR_OS_SPI_MAX_SPEED_HZ, speed_hz)) {
+        return false;
+    }
+
+    if (cs_pin == NULL || mode == NULL || speed_hz == NULL) {
+        return false;
+    }
+
+    *mode = (uint8_t)parsed_mode;
+    if (*speed_hz > SOLAR_OS_SPI_MAX_SPEED_HZ) {
+        solar_os_shell_io_printf(term,
+                                 "spi: speed must be 1..%" PRIu32 " Hz\n",
+                                 SOLAR_OS_SPI_MAX_SPEED_HZ);
+        return false;
+    }
+    return true;
+}
+
+static void spi_print_rx(solar_os_shell_io_t *term, const uint8_t *rx, size_t len)
+{
+    solar_os_shell_io_write(term, "rx:");
+    for (size_t i = 0; i < len; i++) {
+        solar_os_shell_io_printf(term, " %02x", rx[i]);
+    }
+    solar_os_shell_io_put_char(term, '\n');
+}
+
+static void spi_cmd_xfer(solar_os_shell_io_t *term, int argc, char **argv)
+{
+    int cs_pin;
+    uint8_t mode;
+    uint32_t speed_hz;
+    uint8_t tx[SPI_TRANSFER_MAX_LEN];
+    uint8_t rx[SPI_TRANSFER_MAX_LEN];
+
+    if (!spi_parse_common(term, argc, argv, 6, &cs_pin, &mode, &speed_hz) ||
+        argc > 5 + SPI_TRANSFER_MAX_LEN) {
+        solar_os_shell_io_writeln(term, "usage: spi xfer <cs> <mode> <hz> <byte...>");
+        return;
+    }
+
+    const size_t len = (size_t)(argc - 5);
+    for (size_t i = 0; i < len; i++) {
+        if (!parse_u8(argv[i + 5], &tx[i])) {
+            solar_os_shell_io_writeln(term, "spi xfer: byte values must be 0..255");
+            return;
+        }
+    }
+
+    const esp_err_t err = solar_os_spi_transfer(cs_pin, mode, speed_hz, tx, rx, len);
+    if (err != ESP_OK) {
+        if (shell_print_not_supported(term, "spi", "SPI hardware", err)) {
+            return;
+        }
+        solar_os_shell_io_printf(term, "spi xfer failed: %s\n", esp_err_to_name(err));
+        return;
+    }
+
+    spi_print_rx(term, rx, len);
+}
+
+static void spi_cmd_read(solar_os_shell_io_t *term, int argc, char **argv)
+{
+    int cs_pin;
+    uint8_t mode;
+    uint32_t speed_hz;
+    size_t len;
+    uint8_t fill = 0xff;
+    uint8_t tx[SPI_TRANSFER_MAX_LEN];
+    uint8_t rx[SPI_TRANSFER_MAX_LEN];
+
+    if (!spi_parse_common(term, argc, argv, 6, &cs_pin, &mode, &speed_hz) ||
+        !parse_size_arg(argv[5], 1, SPI_TRANSFER_MAX_LEN, &len) ||
+        (argc == 7 && !parse_u8(argv[6], &fill)) ||
+        argc > 7) {
+        solar_os_shell_io_writeln(term, "usage: spi read <cs> <mode> <hz> <len> [fill]");
+        return;
+    }
+
+    memset(tx, fill, len);
+    const esp_err_t err = solar_os_spi_transfer(cs_pin, mode, speed_hz, tx, rx, len);
+    if (err != ESP_OK) {
+        if (shell_print_not_supported(term, "spi", "SPI hardware", err)) {
+            return;
+        }
+        solar_os_shell_io_printf(term, "spi read failed: %s\n", esp_err_to_name(err));
+        return;
+    }
+
+    spi_print_rx(term, rx, len);
+}
+
+static void spi_cmd_write(solar_os_shell_io_t *term, int argc, char **argv)
+{
+    int cs_pin;
+    uint8_t mode;
+    uint32_t speed_hz;
+    uint8_t tx[SPI_TRANSFER_MAX_LEN];
+
+    if (!spi_parse_common(term, argc, argv, 6, &cs_pin, &mode, &speed_hz) ||
+        argc > 5 + SPI_TRANSFER_MAX_LEN) {
+        solar_os_shell_io_writeln(term, "usage: spi write <cs> <mode> <hz> <byte...>");
+        return;
+    }
+
+    const size_t len = (size_t)(argc - 5);
+    for (size_t i = 0; i < len; i++) {
+        if (!parse_u8(argv[i + 5], &tx[i])) {
+            solar_os_shell_io_writeln(term, "spi write: byte values must be 0..255");
+            return;
+        }
+    }
+
+    const esp_err_t err = solar_os_spi_transfer(cs_pin, mode, speed_hz, tx, NULL, len);
+    if (err != ESP_OK) {
+        if (shell_print_not_supported(term, "spi", "SPI hardware", err)) {
+            return;
+        }
+        solar_os_shell_io_printf(term, "spi write failed: %s\n", esp_err_to_name(err));
+        return;
+    }
+
+    solar_os_shell_io_printf(term, "wrote %u byte%s\n", (unsigned)len, len == 1 ? "" : "s");
+}
+
+void solar_os_shell_cmd_spi(solar_os_context_t *ctx, int argc, char **argv)
+{
+    solar_os_shell_io_t *term = terminal(ctx);
+
+    if (argc == 1 || strcmp(argv[1], "status") == 0) {
+        spi_print_status(term);
+        return;
+    }
+
+    if (strcmp(argv[1], "xfer") == 0) {
+        spi_cmd_xfer(term, argc, argv);
+    } else if (strcmp(argv[1], "read") == 0) {
+        spi_cmd_read(term, argc, argv);
+    } else if (strcmp(argv[1], "write") == 0) {
+        spi_cmd_write(term, argc, argv);
+    } else {
+        spi_print_usage(term);
+    }
+}
+#endif
 
 static void print_rtc_warning(solar_os_shell_io_t *term, const solar_os_datetime_t *datetime)
 {
@@ -2445,6 +3043,7 @@ void solar_os_shell_cmd_time(solar_os_context_t *ctx, int argc, char **argv)
                              (unsigned)datetime.second);
 }
 
+#if SOLAR_OS_PACKAGE_SERVICE_SENSORS
 static bool read_environment_for_shell(solar_os_shell_io_t *term, solar_os_environment_t *environment)
 {
     const esp_err_t err = solar_os_sensors_read_environment(environment);
@@ -2496,3 +3095,4 @@ void solar_os_shell_cmd_humidity(solar_os_context_t *ctx, int argc, char **argv)
 
     terminal_printf_fixed_1(term, "Humidity", environment.humidity_percent, "%RH");
 }
+#endif

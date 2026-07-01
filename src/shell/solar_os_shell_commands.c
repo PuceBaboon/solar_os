@@ -21,6 +21,7 @@
 #include "solar_os_app_registry.h"
 #include "solar_os_ble_keyboard.h"
 #include "solar_os_config.h"
+#include "solar_os_display.h"
 #include "solar_os_identity.h"
 #include "solar_os_jobs.h"
 #include "solar_os_log.h"
@@ -893,6 +894,7 @@ static void setterm_print_usage(solar_os_shell_io_t *term)
     solar_os_shell_io_writeln(term, "  setterm orientation [0|90|180|270]");
     solar_os_shell_io_writeln(term, "  setterm font [mono|compact]");
     solar_os_shell_io_writeln(term, "  setterm textsize [12|14|16|18|20]");
+    solar_os_shell_io_writeln(term, "  setterm brightness [0..100]");
     solar_os_shell_io_writeln(term, "  setterm keyboard [us|de]");
     solar_os_shell_io_writeln(term, "  setterm keyrate [off|1..60 [delay-ms]]");
     solar_os_shell_io_writeln(term, "  setterm timezone [UTC|Europe/Berlin|POSIX-TZ]");
@@ -1032,6 +1034,44 @@ void solar_os_shell_cmd_setterm(solar_os_context_t *ctx, int argc, char **argv)
 
         const esp_err_t err = solar_os_terminal_set_text_size(display, text_size);
         setterm_print_save_result(term, "textsize", argv[2], err);
+        return;
+    }
+
+    if (strcmp(argv[1], "brightness") == 0 || strcmp(argv[1], "backlight") == 0) {
+        if (argc == 2) {
+            uint8_t percent = 0;
+            const esp_err_t err = solar_os_display_get_brightness(&percent);
+            if (err == ESP_ERR_NOT_SUPPORTED) {
+                solar_os_shell_io_writeln(term, "brightness: unsupported");
+                return;
+            }
+            if (err != ESP_OK) {
+                solar_os_shell_io_printf(term,
+                                         "brightness: unavailable: %s\n",
+                                         esp_err_to_name(err));
+                return;
+            }
+            solar_os_shell_io_printf(term, "brightness: %u\n", (unsigned)percent);
+            solar_os_shell_io_writeln(term, "values: 0..100");
+            return;
+        }
+        if (argc != 3) {
+            solar_os_shell_io_writeln(term, "usage: setterm brightness [0..100]");
+            return;
+        }
+
+        size_t percent = 0;
+        if (!parse_size_arg(argv[2], 0, 100, &percent)) {
+            solar_os_shell_io_writeln(term, "brightness values: 0..100");
+            return;
+        }
+
+        const esp_err_t err = solar_os_display_set_brightness((uint8_t)percent);
+        if (err == ESP_ERR_NOT_SUPPORTED) {
+            solar_os_shell_io_writeln(term, "brightness: unsupported");
+            return;
+        }
+        setterm_print_save_result(term, "brightness", argv[2], err);
         return;
     }
 

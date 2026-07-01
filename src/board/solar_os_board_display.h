@@ -6,7 +6,7 @@
 #include "esp_err.h"
 #include "u8g2.h"
 
-typedef struct {
+typedef struct solar_os_board_display {
     void *driver;
     u8g2_t *u8g2;
     const char *controller;
@@ -23,3 +23,8 @@ const char *solar_os_board_display_controller(const solar_os_board_display_t *di
 uint16_t solar_os_board_display_width(const solar_os_board_display_t *display);
 uint16_t solar_os_board_display_height(const solar_os_board_display_t *display);
 bool solar_os_board_display_ready(const solar_os_board_display_t *display);
+bool solar_os_board_display_brightness_supported(const solar_os_board_display_t *display);
+esp_err_t solar_os_board_display_get_brightness(const solar_os_board_display_t *display,
+                                                uint8_t *percent);
+esp_err_t solar_os_board_display_set_brightness(solar_os_board_display_t *display,
+                                                uint8_t percent);

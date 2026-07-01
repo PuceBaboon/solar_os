@@ -260,6 +260,15 @@ pio run -e my_board -t upload
 pio device monitor -b 115200
 ```
 
+Classic ESP32 boards can use a board-specific SDK defaults file when the common
+defaults are not appropriate for the target:
+
+```ini
+[env:odroid_go]
+board = odroid_esp32
+board_build.cmake_extra_args = -DSOLAR_OS_BOARD=odroid_go -DSDKCONFIG_DEFAULTS=sdkconfig.defaults.odroid_go
+```
+
 ## Headless Boards
 
 A headless board is a valid SolarOS target as long as it has a byte-stream port.
