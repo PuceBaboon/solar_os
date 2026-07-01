@@ -28,6 +28,38 @@ typedef struct {
 static const char *TAG = "audio_dac";
 static audio_dac_board_state_t audio_dac;
 
+static void audio_dac_board_close(bool write_silence)
+{
+#if SOC_DAC_SUPPORTED
+    if (audio_dac.handle != NULL) {
+        if (write_silence && audio_dac.buffer != NULL) {
+            memset(audio_dac.buffer, AUDIO_DAC_MIDPOINT, AUDIO_DAC_DMA_BUFFER_BYTES);
+            (void)dac_continuous_write(audio_dac.handle,
+                                       audio_dac.buffer,
+                                       AUDIO_DAC_DMA_BUFFER_BYTES,
+                                       NULL,
+                                       50);
+        }
+        (void)dac_continuous_disable(audio_dac.handle);
+        (void)dac_continuous_del_channels(audio_dac.handle);
+    }
+#else
+    (void)write_silence;
+#endif
+    if (audio_dac.buffer != NULL) {
+        heap_caps_free(audio_dac.buffer);
+    }
+    audio_dac.handle = NULL;
+    audio_dac.buffer = NULL;
+    audio_dac.initialized = false;
+}
+
+static void audio_dac_board_recover_after_write_error(esp_err_t ret)
+{
+    ESP_LOGW(TAG, "DAC write failed: %s, resetting DAC channel", esp_err_to_name(ret));
+    audio_dac_board_close(false);
+}
+
 static uint8_t audio_dac_current_volume(void)
 {
     if (!audio_dac.volume_set) {
@@ -102,11 +134,15 @@ esp_err_t audio_dac_board_init(void)
     }
 
     memset(audio_dac.buffer, AUDIO_DAC_MIDPOINT, AUDIO_DAC_CONVERT_BUFFER_BYTES);
-    (void)dac_continuous_write(audio_dac.handle,
+    ret = dac_continuous_write(audio_dac.handle,
                                audio_dac.buffer,
                                AUDIO_DAC_DMA_BUFFER_BYTES,
                                NULL,
                                AUDIO_DAC_WRITE_TIMEOUT_MS);
+    if (ret != ESP_OK) {
+        audio_dac_board_recover_after_write_error(ret);
+        return ret;
+    }
 
     audio_dac.initialized = true;
     ESP_LOGI(TAG,
@@ -122,26 +158,7 @@ esp_err_t audio_dac_board_init(void)
 
 void audio_dac_board_deinit(void)
 {
-#if SOC_DAC_SUPPORTED
-    if (audio_dac.handle != NULL) {
-        if (audio_dac.buffer != NULL) {
-            memset(audio_dac.buffer, AUDIO_DAC_MIDPOINT, AUDIO_DAC_DMA_BUFFER_BYTES);
-            (void)dac_continuous_write(audio_dac.handle,
-                                       audio_dac.buffer,
-                                       AUDIO_DAC_DMA_BUFFER_BYTES,
-                                       NULL,
-                                       50);
-        }
-        (void)dac_continuous_disable(audio_dac.handle);
-        (void)dac_continuous_del_channels(audio_dac.handle);
-    }
-#endif
-    if (audio_dac.buffer != NULL) {
-        heap_caps_free(audio_dac.buffer);
-    }
-    audio_dac.handle = NULL;
-    audio_dac.buffer = NULL;
-    audio_dac.initialized = false;
+    audio_dac_board_close(true);
 }
 
 esp_err_t audio_dac_board_set_volume(uint8_t volume)
@@ -187,6 +204,7 @@ esp_err_t audio_dac_board_write(const void *data, size_t len)
                                    NULL,
                                    AUDIO_DAC_WRITE_TIMEOUT_MS);
         if (ret != ESP_OK) {
+            audio_dac_board_recover_after_write_error(ret);
             return ret;
         }
         input += frames * AUDIO_DAC_BOARD_DEFAULT_CHANNELS;
