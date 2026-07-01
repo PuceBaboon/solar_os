@@ -2806,6 +2806,8 @@ static void python_register_solaros_module(void)
     python_module_store(tui, "KEY_DELETE", mp_obj_new_int(SOLAR_OS_KEY_DELETE));
     python_module_store(tui, "KEY_ESCAPE", mp_obj_new_int(SOLAR_OS_KEY_ESCAPE));
     python_module_store(tui, "KEY_CTRL", mp_obj_new_int(SOLAR_OS_KEY_CTRL));
+    python_module_store(tui, "KEY_AUDIO_MUTE_TOGGLE",
+                        mp_obj_new_int(SOLAR_OS_KEY_AUDIO_MUTE_TOGGLE));
     python_module_store(tui, "KEY_PAGE_UP", mp_obj_new_int(SOLAR_OS_KEY_PAGE_UP));
     python_module_store(tui, "KEY_PAGE_DOWN", mp_obj_new_int(SOLAR_OS_KEY_PAGE_DOWN));
     python_module_store(tui, "rows", MP_OBJ_FROM_PTR(&solaros_tui_rows_obj));
@@ -2862,6 +2864,8 @@ static void python_register_solaros_module(void)
     python_module_store(gfx, "KEY_DELETE", mp_obj_new_int(SOLAR_OS_KEY_DELETE));
     python_module_store(gfx, "KEY_ESCAPE", mp_obj_new_int(SOLAR_OS_KEY_ESCAPE));
     python_module_store(gfx, "KEY_CTRL", mp_obj_new_int(SOLAR_OS_KEY_CTRL));
+    python_module_store(gfx, "KEY_AUDIO_MUTE_TOGGLE",
+                        mp_obj_new_int(SOLAR_OS_KEY_AUDIO_MUTE_TOGGLE));
     python_module_store(gfx, "KEY_PAGE_UP", mp_obj_new_int(SOLAR_OS_KEY_PAGE_UP));
     python_module_store(gfx, "KEY_PAGE_DOWN", mp_obj_new_int(SOLAR_OS_KEY_PAGE_DOWN));
     python_module_store(gfx, "begin", MP_OBJ_FROM_PTR(&solaros_gfx_begin_obj));

@@ -2614,6 +2614,7 @@ static void solua_open_solaros(lua_State *L)
     solua_set_int(L, mod, "KEY_DELETE", SOLAR_OS_KEY_DELETE);
     solua_set_int(L, mod, "KEY_ESCAPE", SOLAR_OS_KEY_ESCAPE);
     solua_set_int(L, mod, "KEY_CTRL", SOLAR_OS_KEY_CTRL);
+    solua_set_int(L, mod, "KEY_AUDIO_MUTE_TOGGLE", SOLAR_OS_KEY_AUDIO_MUTE_TOGGLE);
     solua_set_int(L, mod, "KEY_PAGE_UP", SOLAR_OS_KEY_PAGE_UP);
     solua_set_int(L, mod, "KEY_PAGE_DOWN", SOLAR_OS_KEY_PAGE_DOWN);
     solua_set_func(L, mod, "rows", solua_tui_rows);
@@ -2672,6 +2673,7 @@ static void solua_open_solaros(lua_State *L)
     solua_set_int(L, mod, "KEY_DELETE", SOLAR_OS_KEY_DELETE);
     solua_set_int(L, mod, "KEY_ESCAPE", SOLAR_OS_KEY_ESCAPE);
     solua_set_int(L, mod, "KEY_CTRL", SOLAR_OS_KEY_CTRL);
+    solua_set_int(L, mod, "KEY_AUDIO_MUTE_TOGGLE", SOLAR_OS_KEY_AUDIO_MUTE_TOGGLE);
     solua_set_int(L, mod, "KEY_PAGE_UP", SOLAR_OS_KEY_PAGE_UP);
     solua_set_int(L, mod, "KEY_PAGE_DOWN", SOLAR_OS_KEY_PAGE_DOWN);
     solua_set_func(L, mod, "begin", solua_gfx_begin);

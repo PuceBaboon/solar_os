@@ -39,6 +39,7 @@
 #endif
 
 static const char *TAG = "solar_os_audio";
+static uint8_t audio_mute_restore_volume = SOLAR_OS_BOARD_AUDIO_DEFAULT_VOLUME;
 
 #if SOLAR_OS_PACKAGE_APP_APLAY
 typedef struct {
@@ -512,7 +513,38 @@ esp_err_t solar_os_audio_set_volume(uint8_t volume)
     (void)volume;
     return ESP_ERR_NOT_SUPPORTED;
 #else
-    return solar_os_board_audio_set_volume(volume);
+    esp_err_t ret = solar_os_board_audio_set_volume(volume);
+    if (ret == ESP_OK && volume > 0) {
+        audio_mute_restore_volume = volume;
+    }
+    return ret;
+#endif
+}
+
+esp_err_t solar_os_audio_toggle_mute(uint8_t *volume_after)
+{
+#if !SOLAR_OS_BOARD_HAS_AUDIO
+    if (volume_after != NULL) {
+        *volume_after = 0;
+    }
+    return ESP_ERR_NOT_SUPPORTED;
+#else
+    solar_os_audio_status_t status;
+    solar_os_audio_get_status(&status);
+
+    uint8_t target = audio_mute_restore_volume;
+    if (status.volume > 0) {
+        audio_mute_restore_volume = status.volume;
+        target = 0;
+    } else if (target == 0 || target > 100) {
+        target = SOLAR_OS_BOARD_AUDIO_DEFAULT_VOLUME;
+    }
+
+    const esp_err_t ret = solar_os_board_audio_set_volume(target);
+    if (ret == ESP_OK && volume_after != NULL) {
+        *volume_after = target;
+    }
+    return ret;
 #endif
 }
 

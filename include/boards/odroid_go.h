@@ -70,10 +70,10 @@
 
 #define SOLAR_OS_BOARD_BUTTONS { \
     {.pin = GPIO_NUM_32, .name = "A", .key = '\n', .active_low = true, .pull = SOLAR_OS_BUTTON_PULL_UP}, \
-    {.pin = GPIO_NUM_33, .name = "B", .key = 0x7f, .active_low = true, .pull = SOLAR_OS_BUTTON_PULL_UP}, \
-    {.pin = GPIO_NUM_13, .name = "MENU", .key = SOLAR_OS_KEY_ESCAPE, .active_low = true, .pull = SOLAR_OS_BUTTON_PULL_UP}, \
-    {.pin = GPIO_NUM_27, .name = "SELECT", .key = '\t', .active_low = true, .pull = SOLAR_OS_BUTTON_PULL_UP}, \
-    {.pin = GPIO_NUM_0, .name = "VOLUME", .key = SOLAR_OS_KEY_APP_EXIT, .active_low = true, .pull = SOLAR_OS_BUTTON_PULL_NONE}, \
+    {.pin = GPIO_NUM_33, .name = "B", .key = ' ', .active_low = true, .pull = SOLAR_OS_BUTTON_PULL_UP}, \
+    {.pin = GPIO_NUM_13, .name = "MENU", .key = SOLAR_OS_KEY_APP_EXIT, .active_low = true, .pull = SOLAR_OS_BUTTON_PULL_UP}, \
+    {.pin = GPIO_NUM_27, .name = "SELECT", .key = SOLAR_OS_KEY_ESCAPE, .active_low = true, .pull = SOLAR_OS_BUTTON_PULL_UP}, \
+    {.pin = GPIO_NUM_0, .name = "VOLUME", .key = SOLAR_OS_KEY_AUDIO_MUTE_TOGGLE, .active_low = true, .pull = SOLAR_OS_BUTTON_PULL_NONE}, \
 }
 
 #define SOLAR_OS_BOARD_ADC_DPAD_AXES { \

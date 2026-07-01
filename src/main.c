@@ -733,6 +733,22 @@ static void dispatch_input_chars(const char *chars, size_t count)
     for (size_t i = 0; i < count; i++) {
         const char ch = chars[i];
 
+        if ((uint8_t)ch == SOLAR_OS_KEY_AUDIO_MUTE_TOGGLE) {
+#if SOLAR_OS_PACKAGE_SERVICE_AUDIO
+            uint8_t volume = 0;
+            const esp_err_t err = solar_os_audio_toggle_mute(&volume);
+            if (err == ESP_OK) {
+                SOLAR_OS_LOGI(TAG, "audio mute toggle: volume=%u", (unsigned)volume);
+                last_status_update_ms = 0;
+                update_status();
+                draw_terminal_if_needed();
+            } else if (err != ESP_ERR_NOT_SUPPORTED) {
+                SOLAR_OS_LOGW(TAG, "audio mute toggle failed: %s", esp_err_to_name(err));
+            }
+#endif
+            continue;
+        }
+
         if ((uint8_t)ch == SOLAR_OS_KEY_ALT_PREFIX) {
             if (alt_prefix_pending) {
                 dispatch_char_to_foreground((char)SOLAR_OS_KEY_ALT_PREFIX);
