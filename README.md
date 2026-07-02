@@ -32,9 +32,12 @@ pocket-terminal feature set.
 - ES8311 speaker DAC and ES7210 stereo microphone input
 - I2C bus on SDA/GPIO13 and SCL/GPIO14
 - KEY button for BLE pairing and optional light sleep
-- Expansion port exposes GPIO0, GPIO1, GPIO2, GPIO3, GPIO17, and GPIO18.
-  Runtime GPIO access is intentionally limited to GPIO1, GPIO2, GPIO3, and
-  GPIO17. GPIO0 is BOOT/download mode and GPIO18 is the board KEY input.
+- Expansion port exposes VBUS, 3V3, GND, GPIO0, GPIO1, GPIO2, GPIO3, GPIO13,
+  GPIO14, GPIO17, GPIO18, GPIO19, GPIO20, GPIO43, and GPIO44.
+  Runtime GPIO access is intentionally limited to GPIO1, GPIO2, GPIO3, and GPIO17.
+  GPIO0 is BOOT/download mode, GPIO18 is the board KEY input, GPIO13/GPIO14
+  are the I2C bus, GPIO43/GPIO44 are `uart0`, and GPIO19/GPIO20 are the native
+  USB D-/D+ pair used by CDC.
 
 On this board, SolarOS boots into the display shell. Additional shell, log, SLIP,
 or bridge jobs can claim `cdc0` or `uart0`.
@@ -252,7 +255,7 @@ Hardware and sensors:
 - `battery [status|config|capacity|min_voltage|max_voltage]`: read smoothed voltage, infer battery/external power from trend plus the max-voltage shortcut, and configure battery estimate limits.
 - `stream [list|status]`: list timestamped data streams available to DAQ jobs.
 - `daq [help|status|streams|start|stop]`: start or stop CSV/raw capture from data streams.
-- `gpio [status|list|mode|read|write]`: runtime user GPIO access is limited to GPIO1, GPIO2, GPIO3, and GPIO17.
+- `gpio [status|list|mode|read|write]`: runtime user GPIO access on the Waveshare board is limited to GPIO1, GPIO2, GPIO3, and GPIO17.
 - `adc [status|read]`: read analog voltage on ADC-capable runtime GPIOs.
 - `pwm [status|set|off]`: generate LEDC PWM on runtime GPIOs.
 - `i2c [status|speed|scan|probe|read|write]`

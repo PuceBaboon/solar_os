@@ -210,7 +210,11 @@ while not solaros.should_exit():
 
 ## `solaros.gpio`
 
-GPIO functions expose only the runtime-safe expansion pins: GPIO1, GPIO2, GPIO3, and GPIO17. GPIO0 is exposed on the connector but reserved for BOOT/download mode, and GPIO18 is reserved for the board KEY input.
+GPIO functions expose only runtime-safe expansion pins. On the Waveshare
+ESP32-S3-RLCD-4.2 this is GPIO1, GPIO2, GPIO3, and GPIO17. GPIO0 is reserved for
+BOOT/download mode, GPIO18 is the board KEY input, GPIO13/GPIO14 are I2C,
+GPIO43/GPIO44 are `uart0`, and GPIO19/GPIO20 are the native USB D-/D+ pair
+used by CDC.
 
 - Constants: `INPUT`, `OUTPUT`, `PULL_NONE`, `PULL_UP`, `PULL_DOWN`.
 - `pins()`: return expansion GPIO dictionaries with `pin`, `allowed`, `role`, `configured`, `mode`, `pull`, `level`, and `level_valid`.
@@ -237,7 +241,9 @@ solaros.gpio.write(1, 1)
 
 ## `solaros.adc`
 
-ADC functions expose analog reads on runtime-safe expansion pins that are ADC capable. On the ESP32-S3-RLCD board, GPIO1, GPIO2, GPIO3, and GPIO17 are expected to map to ADC channels.
+ADC functions expose analog reads on runtime-safe expansion pins that are ADC
+capable. On the ESP32-S3-RLCD board, GPIO1, GPIO2, GPIO3, and GPIO17 are
+expected to map to ADC channels.
 
 - `pins()`: return dictionaries with `pin`, `allowed`, `adc_capable`, `unit`, and `channel`.
 - `read(pin)`: return `pin`, `raw`, `voltage_mv`, `unit`, `channel`, and `calibrated`.
