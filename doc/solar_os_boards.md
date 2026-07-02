@@ -124,6 +124,7 @@ Current built-in driver selector values:
 | `DISPLAY` | `drivers/display_st7305.cmake` | `SOLAR_OS_BOARD_DISPLAY_DRIVER=st7305` |
 | `SD` | `drivers/storage_sdmmc.cmake` | `SOLAR_OS_BOARD_STORAGE_DRIVER=sdmmc` |
 | `I2C` | `drivers/i2c_esp_idf.cmake` | `SOLAR_OS_BOARD_I2C_DRIVER=esp_idf` |
+| `SPI` | `drivers/spi_esp_idf.cmake` | `SOLAR_OS_BOARD_SPI_DRIVER=esp_idf` |
 | `RTC` | `drivers/rtc_pcf85063.cmake` | `SOLAR_OS_BOARD_RTC_DRIVER=pcf85063` |
 | `TEMPERATURE`, `HUMIDITY` | `drivers/sensors_shtc3.cmake` | `SOLAR_OS_BOARD_SENSOR_DRIVER=shtc3` |
 | `AUDIO` | `drivers/audio_es8311_es7210.cmake` | `SOLAR_OS_BOARD_AUDIO_DRIVER=es8311_es7210` |
@@ -145,6 +146,7 @@ The current capability flags are:
 | `UART` | Hardware UART byte-stream port `uart0`. |
 | `SD` | SD/MMC storage and filesystem mounting. |
 | `I2C` | Board I2C bus is available. |
+| `SPI` | Board SPI bus is available. |
 | `RTC` | RTC attached to the board I2C bus. |
 | `BATTERY` | Battery voltage monitor is available. |
 | `AUDIO` | Microphone/speaker audio codec path is available. |
@@ -291,6 +293,17 @@ set(SOLAR_OS_BOARD_HAS_BLE ON)
 
 With `uart0` as the primary shell, `cdc0` remains clean for logs, a later shell
 job, bridge jobs, or host-side tooling.
+
+The built-in `esp32_s3_devkitc1_n16r8` target keeps this headless shell model
+and also enables expansion GPIO, ADC, PWM, I2C, and SPI. The default I2C bus is
+GPIO8 SDA and GPIO9 SCL. The default SPI bus is FSPI on GPIO12 SCK, GPIO13
+MISO, and GPIO11 MOSI, with chip-select slots on GPIO10, GPIO5, GPIO6, and
+GPIO7.
+
+For the N16R8 module, GPIO35, GPIO36, and GPIO37 are reserved by Octal PSRAM and
+must not be exposed as runtime GPIO. The generic DevKitC target also reserves
+GPIO38 and GPIO48 because the onboard RGB LED moved between board revisions.
+Use a revision-specific board profile if one of those pins must be exposed.
 
 ## Display Boards
 
