@@ -261,6 +261,7 @@ label = "service.radio"
 sources = [
   "services/solar_os_radio.c",
   "shell/solar_os_shell_radio.c",
+  "shell/solar_os_shell_radio_tui.c",
 ]
 any_capabilities = [
   "expansion_spi",

@@ -1,6 +1,7 @@
 #include "solar_os_shell_commands.h"
 #include "solar_os_shell_common.h"
 #include "solar_os_shell_io.h"
+#include "solar_os_shell_tui_apps.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -10,6 +11,7 @@
 
 #include "esp_err.h"
 #include "solar_os_radio.h"
+#include "solar_os_shell.h"
 
 static solar_os_shell_io_t *terminal(solar_os_context_t *ctx)
 {
@@ -540,9 +542,17 @@ void solar_os_shell_cmd_radio(solar_os_context_t *ctx, int argc, char **argv)
 {
     solar_os_shell_io_t *term = terminal(ctx);
 
-    (void)ctx;
+    if (argc == 1) {
+        const esp_err_t err = solar_os_shell_launch_radio_tui(ctx);
+        if (err != ESP_OK) {
+            solar_os_shell_io_printf(term, "radio: launch failed: %s\n", esp_err_to_name(err));
+        } else {
+            solar_os_shell_session_prepare_foreground_launch(ctx, true);
+        }
+        return;
+    }
 
-    if (argc == 1 || strcmp(argv[1], "status") == 0) {
+    if (strcmp(argv[1], "status") == 0) {
         radio_cmd_status(term, argc, argv);
         return;
     }

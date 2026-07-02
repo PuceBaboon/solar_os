@@ -352,7 +352,8 @@ and writes the inactive ESP-IDF OTA partition.
 | `expansion` | `expansion devices` | List manually attached expansion devices. |
 | `expansion` | `expansion attach <driver> <name> <resource...>` | Attach a compiled expansion driver or manual resource profile. |
 | `expansion` | `expansion detach <name>` | Detach an active expansion device and release its resource claims. |
-| `radio` | `radio [status|list]` | List packet radios registered by expansion drivers. |
+| `radio` | `radio` | Open the packet-radio TUI with live status and editable common config. |
+| `radio` | `radio status|list` | List packet radios registered by expansion drivers. |
 | `radio` | `radio status <name>` | Show one packet radio, its capabilities, state, and current config. |
 | `radio` | `radio config <name> [field value]` | Show or update common packet-radio configuration. |
 | `radio` | `radio state <name> [sleep|standby|rx|tx]` | Show or change radio operating state. |
