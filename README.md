@@ -135,14 +135,14 @@ apps and jobs are not compiled into the image.
 
 Current package groups:
 
-- `core`: Always enabled. Board hardware services, display/terminal, shell, storage, ports, logs, jobs framework, crypto helpers, OTA, RTC/time, BLE keyboard, Wi-Fi control, battery, ADC, GPIO, PWM, I2C, UART, SHTC3 sensors, and the `audio` hardware command.
+- `core`: Always enabled. Board hardware services, display/terminal, shell, storage, editor, pager, serial terminal app, ports, logs, jobs framework, crypto helpers, OTA, RTC/time, BLE keyboard, Wi-Fi control, battery, ADC, GPIO, PWM, I2C, UART, SHTC3 sensors, and the `audio` hardware command.
 - `audio`: `arecord`, `aplay`, and MP3 decoding.
 - `net`: Network tools/apps/jobs such as `ping`, `netscan`, `mqtt`, `ssh`, `scp`, `curl`, `web`, `chat`, `httpd`, `slip`, and `sshkey`.
 - `media`: Image viewer and image decoder apps.
 - `games`: Built-in games.
 - `python`: MicroPython runtime. This currently also enables `net` because the Python module exposes network bindings.
 - `lua`: Lua runtime. This is independent of `python` and does not pull in `net`.
-- `utils`: Text editor, pager, reader, clock, and serial terminal app.
+- `utils`: Reader, clock, notes, files, plot, and sheet apps.
 
 Individual package keys use names such as `app_ssh`, `app_reader`,
 `app_python`, `job_httpd`, `job_daq`, `service_crypto`, `service_uart`, and `service_battery`.

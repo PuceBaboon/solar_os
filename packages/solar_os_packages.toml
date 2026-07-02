@@ -3,6 +3,9 @@ members = [
   "core_runtime",
   "core_shell",
   "core_fs_commands",
+  "app_com",
+  "app_edit",
+  "app_less",
   "service_wifi",
   "service_ble",
   "service_sd",
@@ -104,9 +107,6 @@ triggers = ["app_lua"]
 [groups.utils]
 members = [
   "app_clock",
-  "app_com",
-  "app_edit",
-  "app_less",
   "app_reader",
   "app_files",
   "app_notes",
@@ -115,9 +115,6 @@ members = [
 ]
 triggers = [
   "app_clock",
-  "app_com",
-  "app_edit",
-  "app_less",
   "app_reader",
   "app_files",
   "app_notes",
