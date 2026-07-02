@@ -387,7 +387,12 @@ static const char * const expansion_subcommands[] = {
     "attach",
     "detach",
 };
-static const char * const expansion_driver_values[] = {"manual"};
+static const char * const expansion_driver_values[] = {
+    "manual",
+#if SOLAR_OS_PACKAGE_EXPANSION_RFM69
+    "rfm69",
+#endif
+};
 
 static const char * const radio_subcommands[] = {
     "status",

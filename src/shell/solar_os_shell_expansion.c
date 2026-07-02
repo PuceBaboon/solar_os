@@ -206,6 +206,27 @@ static void expansion_print_claims(solar_os_shell_io_t *term)
     }
 }
 
+static void expansion_print_probe_drivers(solar_os_shell_io_t *term)
+{
+    bool any = false;
+
+    solar_os_shell_io_write(term, "Probe drivers:");
+    for (size_t i = 0; i < solar_os_expansion_driver_count(); i++) {
+        solar_os_expansion_driver_t driver;
+        if (!solar_os_expansion_get_driver(i, &driver) ||
+            !driver.probe_supported ||
+            !solar_os_expansion_driver_supported(driver.name)) {
+            continue;
+        }
+        solar_os_shell_io_printf(term, " %s", driver.name);
+        any = true;
+    }
+    if (!any) {
+        solar_os_shell_io_write(term, " none");
+    }
+    solar_os_shell_io_put_char(term, '\n');
+}
+
 static void expansion_cmd_status(solar_os_shell_io_t *term)
 {
     if (!solar_os_expansion_available()) {
@@ -356,6 +377,9 @@ static void expansion_print_attach_error(solar_os_shell_io_t *term, esp_err_t er
     case ESP_ERR_NO_MEM:
         solar_os_shell_io_writeln(term, "expansion attach: no free device or resource slots");
         break;
+    case ESP_ERR_INVALID_RESPONSE:
+        solar_os_shell_io_writeln(term, "expansion attach: device probe failed");
+        break;
     default:
         solar_os_shell_io_printf(term, "expansion attach failed: %s\n", esp_err_to_name(err));
         break;
@@ -414,7 +438,7 @@ void solar_os_shell_cmd_expansion(solar_os_context_t *ctx, int argc, char **argv
     }
     if (strcmp(argv[1], "scan") == 0) {
         expansion_print_resources(term);
-        solar_os_shell_io_writeln(term, "Probe drivers: none");
+        expansion_print_probe_drivers(term);
         return;
     }
     if (strcmp(argv[1], "drivers") == 0) {

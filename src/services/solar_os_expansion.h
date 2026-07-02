@@ -33,11 +33,18 @@ typedef struct {
     int aux;
 } solar_os_expansion_binding_t;
 
+typedef esp_err_t (*solar_os_expansion_attach_fn_t)(const char *name,
+                                                    const solar_os_expansion_binding_t *bindings,
+                                                    size_t binding_count);
+typedef void (*solar_os_expansion_detach_fn_t)(const char *name);
+
 typedef struct {
     const char *name;
     const char *summary;
     solar_os_board_capabilities_t required_capabilities;
     bool probe_supported;
+    solar_os_expansion_attach_fn_t attach;
+    solar_os_expansion_detach_fn_t detach;
 } solar_os_expansion_driver_t;
 
 typedef struct {

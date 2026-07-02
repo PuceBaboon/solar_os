@@ -412,13 +412,22 @@ expansion attach manual sensor0 i2c0 addr=0x40
 expansion detach radio0
 ```
 
+RFM69 433 MHz packet radios can be attached as active expansion devices. Only
+`spi` and `cs` are required; `irq` and `reset` are optional:
+
+```text
+expansion attach rfm69 radio0 spi=spi0 cs=gpio10
+expansion attach rfm69 radio0 spi=spi0 cs=gpio10 irq=gpio4 reset=gpio5
+expansion detach radio0
+```
+
 Packet radio devices are datagram endpoints registered by expansion drivers, not
 byte-stream ports. The common radio layer preserves packet metadata such as RSSI
 and optional source/destination IDs:
 
 ```text
 radio status radio0
-radio config radio0 freq 868000000
+radio config radio0 freq 433000000
 radio config radio0 modulation gfsk
 radio send radio0 hello
 radio recv radio0 5000

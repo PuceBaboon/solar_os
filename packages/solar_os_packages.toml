@@ -13,6 +13,7 @@ members = [
   "service_spi",
   "service_expansion",
   "service_radio",
+  "expansion_rfm69",
   "service_json",
   "service_crypto",
   "service_uart",
@@ -265,6 +266,15 @@ any_capabilities = [
   "expansion_spi",
   "expansion_uart",
 ]
+
+[packages.expansion_rfm69]
+label = "expansion.rfm69"
+sources = [
+  "drivers/rfm69.c",
+  "services/solar_os_rfm69.c",
+]
+requires = ["esp_driver_gpio"]
+capabilities = ["expansion_spi"]
 
 [packages.service_json]
 label = "service.json"

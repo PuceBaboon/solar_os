@@ -4,6 +4,10 @@
 
 #include "esp_check.h"
 #include "solar_os_board.h"
+#include "solar_os_config.h"
+#if SOLAR_OS_PACKAGE_EXPANSION_RFM69
+#include "solar_os_rfm69.h"
+#endif
 #include "solar_os_resources.h"
 
 #define SOLAR_OS_EXPANSION_DEVICE_MAX 8
@@ -19,6 +23,16 @@ static const solar_os_expansion_driver_t expansion_drivers[] = {
         .required_capabilities = 0,
         .probe_supported = false,
     },
+#if SOLAR_OS_PACKAGE_EXPANSION_RFM69
+    {
+        .name = "rfm69",
+        .summary = "HopeRF RFM69 SPI packet radio",
+        .required_capabilities = SOLAR_OS_BOARD_CAP_EXPANSION_SPI,
+        .probe_supported = true,
+        .attach = solar_os_rfm69_attach,
+        .detach = solar_os_rfm69_detach,
+    },
+#endif
 };
 
 static solar_os_expansion_device_t devices[SOLAR_OS_EXPANSION_DEVICE_MAX];
@@ -475,7 +489,8 @@ esp_err_t solar_os_expansion_attach(const char *driver,
     if (!solar_os_expansion_available()) {
         return ESP_ERR_NOT_SUPPORTED;
     }
-    if (!solar_os_expansion_driver_supported(driver)) {
+    const solar_os_expansion_driver_t *driver_def = find_driver(driver);
+    if (driver_def == NULL || !solar_os_expansion_driver_supported(driver)) {
         return ESP_ERR_NOT_FOUND;
     }
     if (find_device(name) != NULL) {
@@ -505,6 +520,14 @@ esp_err_t solar_os_expansion_attach(const char *driver,
         }
     }
 
+    if (driver_def->attach != NULL) {
+        const esp_err_t ret = driver_def->attach(name, normalized, binding_count);
+        if (ret != ESP_OK) {
+            (void)solar_os_resource_release_owner(name);
+            return ret;
+        }
+    }
+
     memset(device, 0, sizeof(*device));
     device->active = true;
     strlcpy(device->name, name, sizeof(device->name));
@@ -521,6 +544,11 @@ esp_err_t solar_os_expansion_detach(const char *name)
     solar_os_expansion_device_t *device = find_device(name);
     if (device == NULL) {
         return ESP_ERR_NOT_FOUND;
+    }
+
+    const solar_os_expansion_driver_t *driver = find_driver(device->driver);
+    if (driver != NULL && driver->detach != NULL) {
+        driver->detach(name);
     }
 
     (void)solar_os_resource_release_owner(name);
