@@ -222,11 +222,17 @@ port list
 port status cdc0
 session create shell cdc0
 session create shell uart0
+session create shell lcd0
 sessions
 close 16
 ```
 
-Port shells are VT100-style shells over the selected byte stream. Text-capable apps marked as port-capable can run there; display-only TUI/graphics apps remain on the board display. On a port shell, `Ctrl+]` is the foreground app exit key. On the display shell, the foreground app exit chord remains `CTRL+ALT+DEL`.
+Port shells are VT100-style shells over the selected byte stream. A shell can
+also be attached to a ready display target such as `lcd0` with
+`session create shell lcd0`. Text-capable apps marked as port-capable can run
+on port shells; display-only TUI/graphics apps remain on the active display
+shell. On a port shell, `Ctrl+]` is the foreground app exit key. On a display
+shell, the foreground app exit chord remains `CTRL+ALT+DEL`.
 
 ## Built-In Shell Commands
 
@@ -238,7 +244,7 @@ System:
 - `uptime`
 - `sleep`
 - `power [status|profile|idle|key|sleep]`: inspect power state, select runtime performance policy, configure display-shell idle sleep, configure KEY short-press behavior, or enter light sleep.
-- `session [list|create|fg|switch|close]`: manage foreground app sessions and port shell sessions.
+- `session [list|create|fg|switch|close]`: manage foreground app sessions, display shell sessions, and port shell sessions.
 - `jobs`
 - `job [status|start|stop]`: control background jobs; job-specific arguments follow the job name.
 - `port [list|status]`: inspect registered byte-stream ports and current owners.
@@ -562,7 +568,8 @@ The shell command parser currently lives in the shell app. Board and build confi
 
 The important rule is that drivers own hardware detail, services own policy, and apps and jobs use services. That lets shell commands, foreground applications, and background jobs share the same behavior for storage, terminal rendering, networking, identity, time, and input.
 
-Foreground app sessions and port shells are managed by the sessions service.
+Foreground app sessions, display shell sessions, and port shells are managed by
+the sessions service.
 Background jobs are for autonomous work such as logging, DAQ, HTTP serving,
 SLIP, NTP sync, and chatd. Jobs publish stable owner strings and resource claims
 so ports, files, streams, and network listeners can be inspected consistently.

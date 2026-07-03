@@ -29,6 +29,7 @@
 #include "solar_os_ota.h"
 #include "solar_os_port.h"
 #include "solar_os_port_shell.h"
+#include "solar_os_sessions.h"
 #include "solar_os_shell.h"
 #if SOLAR_OS_PACKAGE_NET
 #include "solar_os_ssh_keys.h"
@@ -1038,6 +1039,33 @@ void solar_os_shell_cmd_job(solar_os_context_t *ctx, int argc, char **argv)
         }
 
         if (strcmp(argv[2], "shell") == 0) {
+            solar_os_display_target_t display_target;
+            if (argc == 4 && solar_os_display_find_target(argv[3], &display_target)) {
+                char busy_owner[SOLAR_OS_DISPLAY_TARGET_OWNER_MAX];
+                uint8_t session_id = 0;
+                const esp_err_t err =
+                    solar_os_sessions_create_display_shell(argv[3],
+                                                           &session_id,
+                                                           busy_owner,
+                                                           sizeof(busy_owner));
+                if (err == ESP_OK) {
+                    solar_os_shell_io_printf(term,
+                                             "job shell moved to sessions; session %u created: shell on %s\n",
+                                             (unsigned)session_id,
+                                             argv[3]);
+                } else if (err == ESP_ERR_INVALID_STATE && busy_owner[0] != '\0') {
+                    solar_os_shell_io_printf(term,
+                                             "session create failed: %s owned by %s\n",
+                                             argv[3],
+                                             busy_owner);
+                } else {
+                    solar_os_shell_io_printf(term,
+                                             "session create failed: %s\n",
+                                             esp_err_to_name(err));
+                }
+                return;
+            }
+
             solar_os_port_shell_options_t options;
             if (argc < 4 || !parse_port_shell_options(argc, argv, 4, &options)) {
                 solar_os_shell_io_writeln(
