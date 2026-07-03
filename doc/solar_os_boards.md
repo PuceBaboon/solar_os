@@ -434,6 +434,10 @@ and also enables expansion GPIO, ADC, PWM, I2C, and SPI. The default I2C bus is
 GPIO8 SDA and GPIO9 SCL. The default SPI bus is FSPI on GPIO12 SCK, GPIO13
 MISO, and GPIO11 MOSI, with chip-select slots on GPIO10, GPIO5, GPIO6, and
 GPIO7.
+Auxiliary SPI displays can use that expansion SPI bus through expansion
+drivers. For example, a Nokia 5110 / PCD8544 module can attach as `lcd0` with
+`spi=spi0 cs=gpio10 dc=gpio4 reset=gpio5` and then be exercised with
+`display test lcd0`.
 
 For the N16R8 module, GPIO35, GPIO36, and GPIO37 are reserved by Octal PSRAM and
 must not be exposed as runtime GPIO. The generic DevKitC target also reserves

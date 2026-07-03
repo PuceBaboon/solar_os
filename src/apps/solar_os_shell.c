@@ -274,6 +274,7 @@ static const char * const setterm_timezone_values[] = {"UTC", "Europe/Berlin"};
 
 static const char * const display_subcommands[] = {
     "list",
+    "test",
 };
 
 static const char * const ble_subcommands[] = {
@@ -402,6 +403,9 @@ static const char * const expansion_driver_values[] = {
     "manual",
 #if SOLAR_OS_PACKAGE_EXPANSION_RFM69
     "rfm69",
+#endif
+#if SOLAR_OS_PACKAGE_EXPANSION_NOKIA5110
+    "nokia5110",
 #endif
 };
 

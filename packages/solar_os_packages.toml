@@ -17,6 +17,7 @@ members = [
   "service_expansion",
   "service_radio",
   "expansion_rfm69",
+  "expansion_nokia5110",
   "service_json",
   "service_crypto",
   "service_uart",
@@ -275,6 +276,15 @@ sources = [
 ]
 requires = ["esp_driver_gpio"]
 capabilities = ["expansion_spi"]
+
+[packages.expansion_nokia5110]
+label = "expansion.nokia5110"
+sources = [
+  "drivers/pcd8544.c",
+  "services/solar_os_pcd8544.c",
+]
+requires = ["esp_driver_gpio", "esp_driver_spi", "u8g2"]
+capabilities = ["expansion_spi", "expansion_gpio"]
 
 [packages.service_json]
 label = "service.json"

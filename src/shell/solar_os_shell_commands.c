@@ -22,6 +22,7 @@
 #include "solar_os_ble_keyboard.h"
 #include "solar_os_config.h"
 #include "solar_os_display.h"
+#include "solar_os_fonts.h"
 #include "solar_os_identity.h"
 #include "solar_os_jobs.h"
 #include "solar_os_log.h"
@@ -214,6 +215,7 @@ static void display_print_usage(solar_os_shell_io_t *term)
 {
     solar_os_shell_io_writeln(term, "usage:");
     solar_os_shell_io_writeln(term, "  display [list]");
+    solar_os_shell_io_writeln(term, "  display test <target>");
 }
 
 static void display_print_targets(solar_os_shell_io_t *term)
@@ -249,12 +251,64 @@ static void display_print_targets(solar_os_shell_io_t *term)
     }
 }
 
+static void display_draw_test_pattern(u8g2_t *u8g2, const char *name)
+{
+    const u8g2_uint_t width = u8g2_GetDisplayWidth(u8g2);
+    const u8g2_uint_t height = u8g2_GetDisplayHeight(u8g2);
+
+    u8g2_ClearBuffer(u8g2);
+    u8g2_SetDrawColor(u8g2, 1);
+    u8g2_DrawFrame(u8g2, 0, 0, width, height);
+    if (width > 1 && height > 1) {
+        u8g2_DrawVLine(u8g2, width / 4, 1, height - 2);
+        u8g2_DrawVLine(u8g2, (width * 3) / 4, 1, height - 2);
+    }
+    for (u8g2_uint_t y = 6; y + 6 < height; y += 8) {
+        u8g2_DrawHLine(u8g2, 2, y, width > 4 ? width - 4 : width);
+    }
+
+    u8g2_SetFont(u8g2, u8g2_font_solar_os_default_r_12_tf);
+    u8g2_SetFontMode(u8g2, 1);
+    u8g2_SetFontPosBaseline(u8g2);
+    u8g2_DrawBox(u8g2, 3, 14, width > 6 ? width - 6 : width, 20);
+    u8g2_SetDrawColor(u8g2, 0);
+    u8g2_DrawStr(u8g2, 6, 24, "SolarOS");
+    u8g2_DrawStr(u8g2, 6, 32, name != NULL ? name : "display");
+    u8g2_SetDrawColor(u8g2, 1);
+    u8g2_SendBuffer(u8g2);
+}
+
+static void display_cmd_test(solar_os_shell_io_t *term, int argc, char **argv)
+{
+    if (argc != 3) {
+        solar_os_shell_io_writeln(term, "usage: display test <target>");
+        return;
+    }
+
+    solar_os_display_target_t target;
+    if (!solar_os_display_find_target(argv[2], &target)) {
+        solar_os_shell_io_printf(term, "display test: %s not found\n", argv[2]);
+        return;
+    }
+    if (!target.ready || target.u8g2 == NULL) {
+        solar_os_shell_io_printf(term, "display test: %s is not drawable\n", argv[2]);
+        return;
+    }
+
+    display_draw_test_pattern(target.u8g2, target.name);
+    solar_os_shell_io_printf(term, "display test: drew %s\n", target.name);
+}
+
 void solar_os_shell_cmd_display(solar_os_context_t *ctx, int argc, char **argv)
 {
     solar_os_shell_io_t *term = terminal(ctx);
 
     if (argc == 1 || (argc == 2 && strcmp(argv[1], "list") == 0)) {
         display_print_targets(term);
+        return;
+    }
+    if (argc >= 2 && strcmp(argv[1], "test") == 0) {
+        display_cmd_test(term, argc, argv);
         return;
     }
 

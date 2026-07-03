@@ -65,7 +65,7 @@ Arguments typed after the alias are appended.
 | `version` | `version` | Print SolarOS version, board, flavor, and package information. |
 | `pkg` | `pkg` | Print compiled package groups and build units. |
 | `board` | `board` | Print board ID, name, and capabilities. |
-| `display` | `display [list]` | List drawable display targets from board and expansion providers. |
+| `display` | `display [list]`; `display test <target>` | List drawable display targets or draw a test pattern. |
 | `status` | `status` | Print a compact system status summary. |
 | `uptime` | `uptime` | Print elapsed time since boot. |
 | `mem` | `mem` | Print internal RAM, PSRAM, and DMA memory status. |
@@ -421,6 +421,8 @@ Physical displays are listed by `display list`. A built-in board panel registers
 as a board display target such as `display0`; an expansion display driver stays
 in `expansion drivers` as attachable hardware and registers a display target
 after it is attached. The built-in board panel is not an expansion driver.
+`display test <target>` draws a visible frame/test pattern to a registered
+target.
 
 Manual expansion profiles claim resources without initializing external
 hardware:
@@ -439,6 +441,24 @@ expansion attach rfm69 radio0 spi=spi0 cs=gpio10
 expansion attach rfm69 radio0 spi=spi0 cs=gpio10 irq=gpio4 reset=gpio5
 expansion detach radio0
 ```
+
+Nokia 5110 / PCD8544 SPI LCD modules can be attached as auxiliary display
+targets with the `nokia5110` driver. The driver requires an expansion SPI bus,
+a CS/CE pin, a DC pin, and a reset/RST pin. On the ESP32-S3 DevKitC-1 target:
+
+```text
+display pins: VCC->3V3 GND->GND CLK/SCLK->GPIO12 DIN/MOSI->GPIO11
+display pins: CE/CS->GPIO10 DC->GPIO4 RST->GPIO5
+expansion attach nokia5110 lcd0 spi=spi0 cs=gpio10 dc=gpio4 reset=gpio5
+display list
+display test lcd0
+```
+
+`ce=gpio10` is accepted as an alias for `cs=gpio10`, and `rst=gpio5` is
+accepted as an alias for `reset=gpio5`. If the module has an LED/backlight pin,
+wire it according to the module board; use suitable current limiting when tying
+it to 3V3. Boards without expansion SPI, such as the Waveshare RLCD target,
+will not compile the active `nokia5110` expansion driver.
 
 Packet radio devices are datagram endpoints registered by expansion drivers, not
 byte-stream ports. The common radio layer preserves packet metadata such as RSSI
