@@ -99,11 +99,15 @@ setterm
 setterm orientation [0|90|180|270]
 setterm font [mono|compact]
 setterm textsize [12|14|16|18|20]
+setterm profile [vt100|ansi|dumb]
 setterm keyboard [us|de]
 setterm keyrate [off|1..60 [delay-ms]]
 setterm timezone [UTC|Europe/Berlin|POSIX-TZ]
 setterm otaurl [url]
 ```
+
+`setterm profile` is runtime-only and applies to the current port shell. From
+the display shell it prints guidance to set the profile from a port shell.
 
 ## Apps And Jobs
 

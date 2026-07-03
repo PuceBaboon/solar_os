@@ -991,6 +991,7 @@ static void setterm_print_usage(solar_os_shell_io_t *term)
     solar_os_shell_io_writeln(term, "  setterm font [mono|compact]");
     solar_os_shell_io_writeln(term, "  setterm textsize [12|14|16|18|20]");
     solar_os_shell_io_writeln(term, "  setterm brightness [0..100]");
+    solar_os_shell_io_writeln(term, "  setterm profile [vt100|ansi|dumb]");
     solar_os_shell_io_writeln(term, "  setterm keyboard [us|de]");
     solar_os_shell_io_writeln(term, "  setterm keyrate [off|1..60 [delay-ms]]");
     solar_os_shell_io_writeln(term, "  setterm timezone [UTC|Europe/Berlin|POSIX-TZ]");
@@ -1168,6 +1169,40 @@ void solar_os_shell_cmd_setterm(solar_os_context_t *ctx, int argc, char **argv)
             return;
         }
         setterm_print_save_result(term, "brightness", argv[2], err);
+        return;
+    }
+
+    if (strcmp(argv[1], "profile") == 0) {
+        if (solar_os_shell_io_kind(term) != SOLAR_OS_SHELL_IO_KIND_PORT) {
+            solar_os_shell_io_writeln(term,
+                                      "profile: set profile on port shell to vt100, ansi, or dumb");
+            return;
+        }
+
+        if (argc == 2) {
+            solar_os_shell_io_printf(
+                term,
+                "profile: %s\n",
+                solar_os_shell_terminal_profile_name(solar_os_shell_io_terminal_profile(term)));
+            solar_os_shell_io_writeln(term, "values: vt100 ansi dumb");
+            return;
+        }
+        if (argc != 3) {
+            solar_os_shell_io_writeln(term, "usage: setterm profile [vt100|ansi|dumb]");
+            return;
+        }
+
+        solar_os_shell_terminal_profile_t profile;
+        if (!solar_os_shell_parse_terminal_profile(argv[2], &profile) ||
+            profile == SOLAR_OS_SHELL_TERMINAL_PROFILE_AUTO) {
+            solar_os_shell_io_writeln(term, "profile values: vt100 ansi dumb");
+            return;
+        }
+
+        solar_os_shell_io_set_terminal_profile(term, profile);
+        solar_os_shell_io_printf(term,
+                                 "profile: %s\n",
+                                 solar_os_shell_terminal_profile_name(profile));
         return;
     }
 
