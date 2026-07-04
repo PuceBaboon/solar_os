@@ -25,9 +25,13 @@ typedef struct {
     SemaphoreHandle_t lock;
     esp_timer_handle_t idle_lpm_timer;
     uint32_t idle_lpm_delay_ms;
+    uint8_t lpm_frame_rate;
+    uint8_t hpm_frame_rate;
+    uint8_t power_policy;
     esp_err_t last_error;
     bool bus_initialized;
     bool frame_content_changed;
+    bool inverted;
     const char *controller_mode;
 } rlcd_st7305_t;
 

@@ -67,7 +67,7 @@ Arguments typed after the alias are appended.
 | `pkg` | `pkg` | Print compiled package groups and build units. |
 | `board` | `board` | Print board ID, name, and capabilities. |
 | `engine` | `engine [status|reset]` | Print or reset generic engine utilization counters for CPU/SIMD-style backends and vector bulk operations. |
-| `display` | `display [list]`; `display test <target>`; `display mode <target> [mode]` | List drawable display targets, draw a test pattern, or change experimental controller modes. |
+| `display` | `display [list]`; `display test <target>`; `display mode <target> [mode]` | List drawable display targets, draw a test pattern, or change driver-specific display settings. |
 | `status` | `status` | Print a compact system status summary. |
 | `uptime` | `uptime` | Print elapsed time since boot. |
 | `mem` | `mem` | Print internal RAM, PSRAM, and DMA memory status. |
@@ -431,16 +431,20 @@ in `expansion drivers` as attachable hardware and registers a display target
 after it is attached. The built-in board panel is not an expansion driver.
 `display list` includes the current owner when a target is claimed. `display
 test <target>` claims the target while it draws a visible frame/test pattern,
-then releases it. `display mode <target>` lists experimental controller modes
-for supported display drivers; `display mode <target> <mode>` applies one until
-the display driver is reinitialized. The built-in ST7305 path automatically
-uses the normal power profile before writing changed frame content and switches
-to the paired `lpm` profile after the frame has been idle for the configured
-driver debounce, or immediately when a present pass finds no changed pixels.
-The default ST7305 idle debounce is 1000 ms. The advanced
+then releases it. `display mode <target>` lists driver-specific display
+settings for supported display drivers; `display mode <target> <mode>` applies
+one setting. With `power=auto`, the built-in ST7305 path uses the normal power
+profile before writing changed frame content and switches to the paired `lpm`
+profile after the frame has been idle for the configured driver debounce, or
+immediately when a present pass finds no changed pixels. The default ST7305
+idle debounce is 1000 ms. The advanced
 `display mode <target> idle-lpm-ms=<ms>` driver option updates it at runtime
-and persists it in the ST7305 NVS namespace; `idle-lpm-ms=default` restores the
-driver default. Manual modes choose the experimental controller family.
+and persists it in the ST7305 NVS namespace. ST7305 tuning options also live on
+this driver-specific mode surface: `power=<auto|hpm|lpm>` selects automatic
+idle switching or a forced power mode, `inverted=<on|off>` selects panel
+inversion, `lpm-hz=<0.25|0.5|1|2|4|8>` changes the controller's LPM frame-rate
+field, and `hpm-hz=<16|25.5|32|51>` changes the controller's HPM frame-rate
+field. These driver values are stored in NVS when changed.
 
 Manual expansion profiles claim resources without initializing external
 hardware:
