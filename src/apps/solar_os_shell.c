@@ -148,6 +148,9 @@ static const shell_command_t shell_builtin_commands[] = {
     {"version", "show SolarOS version", solar_os_shell_cmd_version},
     {"pkg", "show compiled packages", solar_os_shell_cmd_pkg},
     {"board", "show board capabilities", solar_os_shell_cmd_board},
+#if SOLAR_OS_PACKAGE_SERVICE_ENGINES
+    {"engine", "show engine utilization", solar_os_shell_cmd_engine},
+#endif
     {"display", "list display targets", solar_os_shell_cmd_display},
     {"clear", "clear the screen", solar_os_shell_cmd_clear},
     {"sleep", "enter light sleep", solar_os_shell_cmd_sleep},

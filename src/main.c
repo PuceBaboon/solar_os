@@ -33,6 +33,7 @@
 #endif
 #include "solar_os_cdc.h"
 #include "solar_os_display.h"
+#include "solar_os_engines.h"
 #include "solar_os_expansion.h"
 #include "solar_os_gpio.h"
 #include "solar_os_gfx_internal.h"
@@ -958,6 +959,13 @@ static void init_peripherals(void)
     const esp_err_t resources_err = solar_os_resources_init();
     if (resources_err != ESP_OK) {
         SOLAR_OS_LOGW(TAG, "Resource claims unavailable: %s", esp_err_to_name(resources_err));
+    }
+#endif
+
+#if SOLAR_OS_PACKAGE_SERVICE_ENGINES
+    const esp_err_t engines_err = solar_os_engines_init();
+    if (engines_err != ESP_OK) {
+        SOLAR_OS_LOGW(TAG, "Engine telemetry unavailable: %s", esp_err_to_name(engines_err));
     }
 #endif
 
