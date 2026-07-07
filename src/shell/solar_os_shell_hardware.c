@@ -223,7 +223,7 @@ static void sd_print_usage(solar_os_shell_io_t *term)
     solar_os_shell_io_writeln(term, "  sd [status]");
     solar_os_shell_io_writeln(term, "  sd lsblk");
     solar_os_shell_io_writeln(term, "  sd mount [sd0pN] [mount]");
-    solar_os_shell_io_writeln(term, "  sd unmount [sd0pN|mount]");
+    solar_os_shell_io_writeln(term, "  sd umount [sd0pN|mount]");
 }
 
 void solar_os_shell_cmd_sd(solar_os_context_t *ctx, int argc, char **argv)
@@ -269,9 +269,9 @@ void solar_os_shell_cmd_sd(solar_os_context_t *ctx, int argc, char **argv)
         return;
     }
 
-    if (strcmp(argv[1], "unmount") == 0) {
+    if (strcmp(argv[1], "umount") == 0) {
         if (argc > 3) {
-            solar_os_shell_io_writeln(term, "usage: sd unmount [sd0pN|mount]");
+            solar_os_shell_io_writeln(term, "usage: sd umount [sd0pN|mount]");
             return;
         }
 
@@ -287,7 +287,7 @@ void solar_os_shell_cmd_sd(solar_os_context_t *ctx, int argc, char **argv)
         } else if (err == ESP_ERR_NOT_FOUND) {
             solar_os_shell_io_printf(term, "SD: not mounted: %s\n", argv[2]);
         } else {
-            solar_os_shell_io_printf(term, "sd unmount failed: %s\n", esp_err_to_name(err));
+            solar_os_shell_io_printf(term, "sd umount failed: %s\n", esp_err_to_name(err));
         }
         return;
     }

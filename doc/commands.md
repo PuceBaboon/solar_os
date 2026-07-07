@@ -186,7 +186,7 @@ same job again stops the previous instance and starts it with the new arguments.
 | `sd` | `sd [status]` | Show SD/storage status. |
 | `sd` | `sd lsblk` | List detected SD block devices and partitions. |
 | `sd` | `sd mount [sd0pN] [mount]` | Mount the default volume or an explicit partition. |
-| `sd` | `sd unmount [sd0pN|mount]` | Unmount the default volume or an explicit partition/mount point. |
+| `sd` | `sd umount [sd0pN|mount]` | Unmount the default volume or an explicit partition/mount point. |
 | `ramfs` | `ramfs [status]` | List PSRAM-backed volatile filesystem mounts. |
 | `ramfs` | `ramfs mount /path size` | Mount a volatile filesystem that reserves PSRAM, such as `ramfs mount / 1m`. |
 | `ramfs` | `ramfs unmount /path` | Unmount a ramfs mount. |

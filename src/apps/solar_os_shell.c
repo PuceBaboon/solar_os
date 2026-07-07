@@ -384,7 +384,7 @@ static const char * const sd_subcommands[] = {
     "status",
     "lsblk",
     "mount",
-    "unmount",
+    "umount",
 };
 
 static const char * const ramfs_subcommands[] = {
@@ -813,7 +813,7 @@ static const char * const path_mqtt_subscribe_topic[] = {
 static const char * const path_sd[] = {"sd"};
 static const char * const path_sd_mount[] = {"sd", "mount"};
 static const char * const path_sd_mount_target[] = {"sd", "mount", SHELL_COMPLETION_ANY};
-static const char * const path_sd_unmount[] = {"sd", "unmount"};
+static const char * const path_sd_umount[] = {"sd", "umount"};
 static const char * const path_ramfs[] = {"ramfs"};
 static const char * const path_ramfs_mount_path[] = {"ramfs", "mount", SHELL_COMPLETION_ANY};
 static const char * const path_ramfs_unmount[] = {"ramfs", "unmount"};
@@ -1212,7 +1212,7 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_STATIC(path_sd, sd_subcommands),
     SHELL_COMPLETION_STORAGE_MOUNTABLES(path_sd_mount),
     SHELL_COMPLETION_PATH(path_sd_mount_target, true),
-    SHELL_COMPLETION_STORAGE_UNMOUNT_TARGETS(path_sd_unmount),
+    SHELL_COMPLETION_STORAGE_UNMOUNT_TARGETS(path_sd_umount),
     SHELL_COMPLETION_STATIC(path_ramfs, ramfs_subcommands),
     SHELL_COMPLETION_STATIC(path_ramfs_mount_path, ramfs_size_values),
     SHELL_COMPLETION_RAMFS_MOUNTS(path_ramfs_unmount),
