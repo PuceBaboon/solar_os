@@ -2,6 +2,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -47,6 +48,9 @@
 #include "solar_os_jobs.h"
 #include "solar_os_mqtt.h"
 #include "solar_os_net.h"
+#if SOLAR_OS_PACKAGE_SERVICE_ONEWIRE
+#include "solar_os_onewire.h"
+#endif
 #include "solar_os_port_shell.h"
 #include "solar_os_pwm.h"
 #if SOLAR_OS_PACKAGE_SERVICE_SENSORS
@@ -1482,6 +1486,74 @@ static mp_obj_t solaros_gpio_write(mp_obj_t pin_obj, mp_obj_t level_obj)
     return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_2(solaros_gpio_write_obj, solaros_gpio_write);
+
+#if SOLAR_OS_PACKAGE_SERVICE_ONEWIRE
+static mp_obj_t solaros_onewire_allowed(mp_obj_t pin_obj)
+{
+    return mp_obj_new_bool(solar_os_onewire_pin_allowed(python_gpio_pin_from_obj(pin_obj)));
+}
+MP_DEFINE_CONST_FUN_OBJ_1(solaros_onewire_allowed_obj, solaros_onewire_allowed);
+
+static mp_obj_t solaros_onewire_reset(mp_obj_t pin_obj)
+{
+    bool present = false;
+    python_check_esp(solar_os_onewire_reset(python_gpio_pin_from_obj(pin_obj), &present));
+    return mp_obj_new_bool(present);
+}
+MP_DEFINE_CONST_FUN_OBJ_1(solaros_onewire_reset_obj, solaros_onewire_reset);
+
+static mp_obj_t solaros_onewire_scan(mp_obj_t pin_obj)
+{
+    uint64_t addresses[SOLAR_OS_ONEWIRE_MAX_DEVICES];
+    size_t count = 0;
+    python_check_esp(solar_os_onewire_scan(python_gpio_pin_from_obj(pin_obj),
+                                           addresses,
+                                           SOLAR_OS_ONEWIRE_MAX_DEVICES,
+                                           &count));
+
+    mp_obj_t list = mp_obj_new_list(0, NULL);
+    for (size_t i = 0; i < count; i++) {
+        char address[17];
+        snprintf(address, sizeof(address), "%016" PRIx64, addresses[i]);
+
+        mp_obj_t device = mp_obj_new_dict(2);
+        python_dict_store_cstr(device, "address", address);
+        python_dict_store_int(device, "family", (uint8_t)addresses[i]);
+        mp_obj_list_append(list, device);
+    }
+    return list;
+}
+MP_DEFINE_CONST_FUN_OBJ_1(solaros_onewire_scan_obj, solaros_onewire_scan);
+
+static mp_obj_t solaros_onewire_xfer(size_t n_args, const mp_obj_t *args)
+{
+    const int pin = python_gpio_pin_from_obj(args[0]);
+    const size_t read_len = python_size_from_obj(args[1]);
+    if (read_len > SOLAR_OS_ONEWIRE_MAX_TRANSFER) {
+        mp_raise_ValueError(MP_ERROR_TEXT("read length exceeds 64 bytes"));
+    }
+
+    mp_buffer_info_t tx = {0};
+    if (n_args >= 3 && args[2] != mp_const_none) {
+        mp_get_buffer_raise(args[2], &tx, MP_BUFFER_READ);
+    }
+    if (tx.len > SOLAR_OS_ONEWIRE_MAX_TRANSFER) {
+        mp_raise_ValueError(MP_ERROR_TEXT("write data exceeds 64 bytes"));
+    }
+    if (read_len == 0 && tx.len == 0) {
+        mp_raise_ValueError(MP_ERROR_TEXT("empty transfer"));
+    }
+
+    uint8_t rx_data[SOLAR_OS_ONEWIRE_MAX_TRANSFER];
+    python_check_esp(solar_os_onewire_transfer(pin,
+                                               tx.buf,
+                                               tx.len,
+                                               rx_data,
+                                               read_len));
+    return mp_obj_new_bytes(rx_data, read_len);
+}
+MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(solaros_onewire_xfer_obj, 2, 3, solaros_onewire_xfer);
+#endif
 
 static mp_obj_t solaros_led_status(void)
 {
@@ -2976,6 +3048,14 @@ static void python_register_solaros_module(void)
     python_module_store(gpio, "configure", MP_OBJ_FROM_PTR(&solaros_gpio_mode_obj));
     python_module_store(gpio, "read", MP_OBJ_FROM_PTR(&solaros_gpio_read_obj));
     python_module_store(gpio, "write", MP_OBJ_FROM_PTR(&solaros_gpio_write_obj));
+
+#if SOLAR_OS_PACKAGE_SERVICE_ONEWIRE
+    mp_obj_t onewire = python_new_submodule(module, "onewire");
+    python_module_store(onewire, "allowed", MP_OBJ_FROM_PTR(&solaros_onewire_allowed_obj));
+    python_module_store(onewire, "reset", MP_OBJ_FROM_PTR(&solaros_onewire_reset_obj));
+    python_module_store(onewire, "scan", MP_OBJ_FROM_PTR(&solaros_onewire_scan_obj));
+    python_module_store(onewire, "xfer", MP_OBJ_FROM_PTR(&solaros_onewire_xfer_obj));
+#endif
 
     mp_obj_t led = python_new_submodule(module, "led");
     python_module_store(led, "status", MP_OBJ_FROM_PTR(&solaros_led_status_obj));

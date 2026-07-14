@@ -1,6 +1,7 @@
 #include "solar_os_lua.h"
 
 #include <ctype.h>
+#include <inttypes.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -40,6 +41,9 @@
 #include "solar_os_mqtt.h"
 #include "solar_os_net.h"
 #include "solar_os_ssh_keys.h"
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_ONEWIRE
+#include "solar_os_onewire.h"
 #endif
 #include "solar_os_port_shell.h"
 #include "solar_os_pwm.h"
@@ -1398,6 +1402,78 @@ static int solua_gpio_write(lua_State *L)
                                                lua_toboolean(L, 2)));
 }
 
+#if SOLAR_OS_PACKAGE_SERVICE_ONEWIRE
+static int solua_onewire_allowed(lua_State *L)
+{
+    lua_pushboolean(L, solar_os_onewire_pin_allowed(solua_check_gpio_pin(L, 1)));
+    return 1;
+}
+
+static int solua_onewire_reset(lua_State *L)
+{
+    bool present = false;
+    (void)solua_check_esp(L,
+                          solar_os_onewire_reset(solua_check_gpio_pin(L, 1), &present));
+    lua_pushboolean(L, present);
+    return 1;
+}
+
+static int solua_onewire_scan(lua_State *L)
+{
+    uint64_t addresses[SOLAR_OS_ONEWIRE_MAX_DEVICES];
+    size_t count = 0;
+    (void)solua_check_esp(L,
+                          solar_os_onewire_scan(solua_check_gpio_pin(L, 1),
+                                                addresses,
+                                                SOLAR_OS_ONEWIRE_MAX_DEVICES,
+                                                &count));
+
+    lua_newtable(L);
+    const int list = lua_gettop(L);
+    for (size_t i = 0; i < count; i++) {
+        char address[17];
+        snprintf(address, sizeof(address), "%016" PRIx64, addresses[i]);
+
+        lua_newtable(L);
+        solua_set_str(L, -1, "address", address);
+        solua_set_int(L, -1, "family", (uint8_t)addresses[i]);
+        lua_rawseti(L, list, (lua_Integer)i + 1);
+    }
+    return 1;
+}
+
+static int solua_onewire_xfer(lua_State *L)
+{
+    const int pin = solua_check_gpio_pin(L, 1);
+    const size_t read_len = solua_check_size(L, 2);
+    if (read_len > SOLAR_OS_ONEWIRE_MAX_TRANSFER) {
+        return luaL_error(L, "read length exceeds 64 bytes");
+    }
+
+    size_t write_len = 0;
+    const char *write_data = "";
+    if (!lua_isnoneornil(L, 3)) {
+        write_data = luaL_checklstring(L, 3, &write_len);
+    }
+    if (write_len > SOLAR_OS_ONEWIRE_MAX_TRANSFER) {
+        return luaL_error(L, "write data exceeds 64 bytes");
+    }
+    if (read_len == 0 && write_len == 0) {
+        return luaL_error(L, "empty transfer");
+    }
+
+    uint8_t rx_data[SOLAR_OS_ONEWIRE_MAX_TRANSFER];
+    (void)solua_check_esp(L,
+                          solar_os_onewire_transfer(pin,
+                                                    (const uint8_t *)write_data,
+                                                    write_len,
+                                                    rx_data,
+                                                    read_len));
+    lua_pushlstring(L, (const char *)rx_data, read_len);
+    return 1;
+}
+#endif
+
 static int solua_led_status(lua_State *L)
 {
     bool on = false;
@@ -2728,6 +2804,16 @@ static void solua_open_solaros(lua_State *L)
     solua_set_func(L, mod, "read", solua_gpio_read);
     solua_set_func(L, mod, "write", solua_gpio_write);
     lua_pop(L, 1);
+
+#if SOLAR_OS_PACKAGE_SERVICE_ONEWIRE
+    solua_new_submodule(L, solaros, "onewire");
+    mod = lua_gettop(L);
+    solua_set_func(L, mod, "allowed", solua_onewire_allowed);
+    solua_set_func(L, mod, "reset", solua_onewire_reset);
+    solua_set_func(L, mod, "scan", solua_onewire_scan);
+    solua_set_func(L, mod, "xfer", solua_onewire_xfer);
+    lua_pop(L, 1);
+#endif
 
     solua_new_submodule(L, solaros, "led");
     mod = lua_gettop(L);

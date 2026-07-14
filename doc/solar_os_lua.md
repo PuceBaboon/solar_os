@@ -35,6 +35,7 @@ Hardware-backed tables are present only when the board/flavor includes the corre
 - `solaros.wifi`: `status`, `status_text`, `start`, `stop`, `connect`, `connect_saved`, `disconnect`, `forget`, `forget_ssid`, `forget_all`, `known`, `scan`, `ap_start`, `ap_stop`, `nat`
 - `solaros.mqtt`: `status`, `connect`, `disconnect`, `publish`, `subscribe`, `read` when the `net` package is compiled
 - `solaros.gpio`: constants `INPUT`, `OUTPUT`, `PULL_NONE`, `PULL_UP`, `PULL_DOWN`; functions `pins`, `allowed`, `mode`, `configure`, `read`, `write`
+- `solaros.onewire`: `allowed`, `reset`, `scan`, `xfer` when OneWire support is compiled
 - `solaros.led`: `status`, `set`, `on`, `off`, `toggle`
 - `solaros.adc`: `pins`, `read`
 - `solaros.pwm`: constants `FREQ_MIN`, `FREQ_MAX`; functions `status`, `set`, `off`
@@ -53,6 +54,11 @@ Hardware-backed tables are present only when the board/flavor includes the corre
 - `solaros.gfx`: foreground graphics drawing functions
 
 Lua strings are binary-safe, so byte-oriented APIs such as `uart.read`, `i2c.read_reg`, `clipboard.get`, and `mqtt.read().payload` return Lua strings.
+
+`solaros.onewire.scan(pin)` returns tables containing a 16-digit hexadecimal
+`address` and numeric `family` code. `solaros.onewire.xfer(pin, read_len[, data])`
+resets the bus, writes the binary-safe `data` string, and returns `read_len`
+bytes. Reads and writes are each limited to 64 bytes.
 
 `solaros.uart.status()` includes `rx_buffered` and `rx_buffered_valid`. When another owner is actively using the UART, `rx_buffered_valid` is `false` because the live RX count is not sampled.
 
