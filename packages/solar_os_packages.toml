@@ -14,6 +14,7 @@ members = [
   "service_engines",
   "service_vector",
   "service_gpio",
+  "service_onewire",
   "service_logic",
   "service_i2c",
   "service_spi",
@@ -242,6 +243,12 @@ sources = ["services/solar_os_vector.c"]
 label = "service.gpio"
 sources = ["services/solar_os_gpio.c", "services/solar_os_status_led.c"]
 requires = ["esp_driver_gpio"]
+capabilities = ["gpio"]
+
+[packages.service_onewire]
+label = "service.onewire"
+sources = ["services/solar_os_onewire.c"]
+requires = ["onewire_bus"]
 capabilities = ["gpio"]
 
 [packages.service_logic]
