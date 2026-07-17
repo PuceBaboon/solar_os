@@ -80,11 +80,13 @@ solaros.time.set_datetime({"year": 2026, "month": 6, "day": 19, "hour": 12, "min
 
 Storage functions expose SD mount and filesystem service operations.
 
-- `status()`: return a human-readable SD status string.
+- `status()`: return a human-readable status string for the preferred mounted
+  persistent storage (SD when mounted, otherwise internal flash).
 - `is_mounted()`: return whether the default storage volume is mounted.
 - `mount()`: mount the default storage volume.
 - `unmount()`: unmount the default storage volume.
-- `mount_point()`: return the default mount point.
+- `mount_point()`: return the preferred mounted persistent-storage path (SD
+  when mounted, otherwise internal flash).
 - `usage([path])`: return disk usage for the default volume or the volume containing `path`.
 - `resolve(path)`: return the internal resolved path.
 - `rescan()`: rescan SD block devices and partitions.

@@ -909,7 +909,7 @@ static void update_status(void)
     }
 #endif
     if (board_has(SOLAR_OS_BOARD_CAP_SD)) {
-        status.sd_mounted = solar_os_storage_is_mounted();
+        status.sd_mounted = solar_os_storage_sd_is_mounted();
     }
 
 #if SOLAR_OS_PACKAGE_SERVICE_AUDIO
